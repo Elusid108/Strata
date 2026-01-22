@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "1.0.3";
+  const APP_VERSION = "1.0.4";
 
   // --- Internal Icon Components ---
   const IconBase = ({ children, size = 24, className = "" }) => (
@@ -940,17 +940,15 @@
         return starred;
     };
 
-    // Helper to create a default page with one empty text block
+    // Helper to create a default page (empty - bottom block logic handles adding blocks)
     const createDefaultPage = (name = 'New Page') => {
-      const blockId = generateId();
       return { 
         id: generateId(), 
         name, 
         createdAt: Date.now(), 
-        rows: [{ id: generateId(), columns: [{ id: generateId(), blocks: [{ id: blockId, type: 'text', content: '' }] }] }], 
+        rows: [], // Empty - the "always have a blank block at bottom" logic handles this
         icon: '📄', 
         cover: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
-        _firstBlockId: blockId // Track for auto-focus
       };
     };
 
@@ -1547,18 +1545,33 @@
             };
         }
         
-        const condensedWidth = 44;  // Icon only + small padding
-        const fullWidth = 180;      // Full tab with name and settings
-        const nearWidth = 90;       // Adjacent tabs (partial name visible)
-        const midWidth = 60;        // Two steps away
+        // Calculate available space and dynamic widths
+        const containerWidth = tabBarRef.current?.clientWidth || 800;
+        const tabCount = allTabs.length;
+        const addButtonWidth = 40;
+        const gaps = tabCount * 4; // space-x-1
+        const padding = 16;
+        const availableForTabs = containerWidth - addButtonWidth - gaps - padding;
         
-        // If nothing is hovered, all tabs are condensed
-        if (!hoveredTabId) {
-            return { width: `${condensedWidth}px`, minWidth: `${condensedWidth}px`, maxWidth: `${condensedWidth}px` };
+        // Calculate base width that fits all tabs (minimum 44px for icon)
+        const baseWidth = Math.max(44, Math.min(120, Math.floor(availableForTabs / tabCount)));
+        
+        // Use hovered tab OR active tab as the "expanded" one
+        const expandedTabId = hoveredTabId || activeTabId;
+        
+        // If no expanded tab, all tabs at calculated base width
+        if (!expandedTabId) {
+            return { width: `${baseWidth}px`, minWidth: `${baseWidth}px`, maxWidth: `${baseWidth}px` };
         }
         
-        const hoveredIndex = allTabs.findIndex(t => t.id === hoveredTabId);
-        const distance = Math.abs(tabIndex - hoveredIndex);
+        // Fish-eye effect: expanded tab gets more space
+        const expandedIndex = allTabs.findIndex(t => t.id === expandedTabId);
+        const distance = Math.abs(tabIndex - expandedIndex);
+        
+        // Calculate expanded width (take extra from other tabs)
+        const extraForExpanded = Math.min(60, availableForTabs * 0.15);
+        const fullWidth = Math.min(180, baseWidth + extraForExpanded);
+        const nearWidth = Math.max(44, baseWidth - 10);
         
         if (distance === 0) {
             return { width: `${fullWidth}px`, minWidth: `${fullWidth}px`, maxWidth: `${fullWidth}px` };
@@ -1566,37 +1579,45 @@
         if (distance === 1) {
             return { width: `${nearWidth}px`, minWidth: `${nearWidth}px`, maxWidth: `${nearWidth}px` };
         }
-        if (distance === 2) {
-            return { width: `${midWidth}px`, minWidth: `${midWidth}px`, maxWidth: `${midWidth}px` };
-        }
-        return { width: `${condensedWidth}px`, minWidth: `${condensedWidth}px`, maxWidth: `${condensedWidth}px` };
+        return { width: `${baseWidth}px`, minWidth: `${baseWidth}px`, maxWidth: `${baseWidth}px` };
     };
 
     // Determine if tab should show full details (name, settings icon)
     const shouldShowTabDetails = (tabId, tabIndex, allTabs) => {
         if (!tabsOverflow || settings.condensedView) return !settings.condensedView;
-        if (!hoveredTabId) return false;
-        const hoveredIndex = allTabs.findIndex(t => t.id === hoveredTabId);
-        const distance = Math.abs(tabIndex - hoveredIndex);
-        return distance === 0; // Only show full details on directly hovered tab
+        // Use hovered OR active tab as expanded
+        const expandedTabId = hoveredTabId || activeTabId;
+        if (!expandedTabId) return false;
+        const expandedIndex = allTabs.findIndex(t => t.id === expandedTabId);
+        const distance = Math.abs(tabIndex - expandedIndex);
+        return distance === 0; // Only show full details on expanded tab
     };
 
     // Determine if tab name should be partially visible (truncated)
     const shouldShowTabName = (tabId, tabIndex, allTabs) => {
         if (!tabsOverflow || settings.condensedView) return !settings.condensedView;
-        if (!hoveredTabId) return false;
-        const hoveredIndex = allTabs.findIndex(t => t.id === hoveredTabId);
-        const distance = Math.abs(tabIndex - hoveredIndex);
-        return distance <= 1; // Show name on hovered and immediate neighbors
+        // Use hovered OR active tab as expanded
+        const expandedTabId = hoveredTabId || activeTabId;
+        if (!expandedTabId) return false;
+        const expandedIndex = allTabs.findIndex(t => t.id === expandedTabId);
+        const distance = Math.abs(tabIndex - expandedIndex);
+        return distance <= 1; // Show name on expanded and immediate neighbors
     };
 
     const getPageBgClass = (colorName) => {
          const map = {
-            gray: 'bg-gray-100', red: 'bg-red-100', orange: 'bg-orange-100', amber: 'bg-amber-100',
-            green: 'bg-green-100', teal: 'bg-teal-100', blue: 'bg-blue-100', indigo: 'bg-indigo-100',
-            purple: 'bg-purple-100', pink: 'bg-pink-100',
+            gray: 'bg-gray-100 dark:bg-gray-800',
+            red: 'bg-red-100 dark:bg-red-900',
+            orange: 'bg-orange-100 dark:bg-orange-900',
+            amber: 'bg-amber-100 dark:bg-amber-900',
+            green: 'bg-green-100 dark:bg-green-900',
+            teal: 'bg-teal-100 dark:bg-teal-900',
+            blue: 'bg-blue-100 dark:bg-blue-900',
+            indigo: 'bg-indigo-100 dark:bg-indigo-900',
+            purple: 'bg-purple-100 dark:bg-purple-900',
+            pink: 'bg-pink-100 dark:bg-pink-900',
          }
-         return map[colorName] || 'bg-white';
+         return map[colorName] || 'bg-white dark:bg-gray-900';
     }
 
     const handleBlockHandleClick = (e, blockId) => {
@@ -1768,7 +1789,7 @@
                  >
                      <div 
                          onClick={() => selectTab(tab.id)} 
-                         className={`${isCondensedMode ? 'px-2' : (settings.condensedView ? 'px-2' : 'px-4')} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 border-t border-l border-r border-transparent overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm !border-gray-300 translate-y-[1px]` : `${getTabColorClasses(tab.color, false)} mb-1`}`} 
+                         className={`${isCondensedMode ? 'px-2' : (settings.condensedView ? 'px-2' : 'px-4')} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 border-t border-l border-r border-transparent overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm !border-gray-300 -translate-y-[2px]` : `${getTabColorClasses(tab.color, false)}`}`} 
                          title={(!showName || settings.condensedView) ? tab.name : undefined}
                      >
                       <span 
