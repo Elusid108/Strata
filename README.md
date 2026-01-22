@@ -1,6 +1,6 @@
 # Strata
 
-A modern, block-based note-taking web application designed to be hosted on GitHub Pages or any static file server.
+A modern, block-based note-taking web application with Google Drive integration. Designed to be hosted on GitHub Pages or any static file server.
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ Strata/
 ├── app.js              # React application (JSX, uses Babel for transpilation)
 ├── google-api.js       # Google Drive API helper module
 ├── config.js           # Google API credentials (create from config.example.js)
-├── config.example.js  # Template for config.js
+├── config.example.js   # Template for config.js
 ├── .gitignore          # Excludes config.js from git
 └── README.md           # This file
 ```
@@ -39,30 +39,28 @@ Strata/
 - **Dark mode** - Full dark mode support with system preference or manual toggle
 - **Favorites** - Star pages for quick access
 - **Tab color cycling** - New tabs automatically cycle through colors
-- **Responsive tabs** - Fish-eye hover effect when tabs overflow (condenses tabs, expands on hover)
+- **Responsive tabs** - Fish-eye hover effect when tabs overflow
 - **Google Drive Integration** - Cloud storage with automatic sync
 - **Google Drive File Embedding** - Embed Docs, Sheets, Slides via `/gdoc` command
-- **File Uploads** - Drag & drop images/PDFs to upload to Drive folders
 - **PDF Viewing** - Embed PDFs from URLs or Google Drive
 - **Local Storage Fallback** - Works offline without Google sign-in
 
 ## Data Storage
 
-Strata now supports **Google Drive** as the primary storage backend, with localStorage as a fallback for offline use.
+Strata supports **Google Drive** as the primary storage backend, with localStorage as a fallback for offline use.
 
 ### Google Drive Integration
 
 **Storage Architecture:**
 - **Manifest File** (`strata_manifest.json`): Stored in Google Drive's `appDataFolder` (hidden, app-specific)
   - Contains all notebooks, tabs, pages, blocks, and settings
-  - Automatically synced with debounced saves (500ms)
+  - Automatically synced with debounced saves
 - **Folder Structure**: Mirrors your Notebook/Tab hierarchy in "My Drive"
   - Root folder: `Strata Notebooks`
   - Each Notebook → Drive folder
   - Each Tab → Drive folder (nested under Notebook folder)
-  - Uploaded files (images, PDFs) → Stored in Tab folders
 
-**Setup Instructions:**
+### Setup Instructions
 
 1. **Create Google Cloud Project:**
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
@@ -75,11 +73,10 @@ Strata now supports **Google Drive** as the primary storage backend, with localS
    - Add authorized JavaScript origins:
      - `http://localhost:8000` (for local testing)
      - `https://yourusername.github.io` (for GitHub Pages)
-   - Add authorized redirect URIs (same as origins)
 
 3. **Create API Key:**
    - In "Credentials", create an "API Key"
-   - Restrict to "Google Drive API" (optional but recommended)
+   - Restrict to "Google Drive API" (recommended)
 
 4. **Configure the App:**
    - Copy `config.example.js` to `config.js`
@@ -91,17 +88,11 @@ Strata now supports **Google Drive** as the primary storage backend, with localS
    - Deploy to GitHub Pages or your static host
    - Users will sign in with Google on first use
 
-**Features:**
-- Automatic data migration from localStorage on first Google sign-in
-- Real-time sync to Google Drive (debounced)
-- Folder structure mirrors Notebook/Tab organization
-- File uploads (drag & drop images/PDFs) → Stored in Drive
-- Google Drive file embedding (`/gdoc` command)
+### Fallback Mode
 
-**Fallback Mode:**
-- If not signed in, app uses `localStorage`:
-  - `note-app-data-v1` - All notebooks, tabs, pages, and blocks
-  - `note-app-settings-v1` - Theme and display preferences
+If not signed in, app uses `localStorage`:
+- `note-app-data-v1` - All notebooks, tabs, pages, and blocks
+- `note-app-settings-v1` - Theme and display preferences
 
 ## Deployment to GitHub Pages
 
@@ -113,18 +104,21 @@ Strata now supports **Google Drive** as the primary storage backend, with localS
 
 - **Google Embeds**: May have CORS issues on some hosting setups
 - **Babel in Browser**: For production, consider a build step to pre-compile JSX
-- **No offline support**: Could add a service worker for PWA functionality
+- **OAuth Origins**: Must configure allowed origins in Google Cloud Console
 
 ## Version History
 
+- **v2.0.0** - Google Drive integration, cloud sync, Drive file embedding
+- **v1.0.5** - Tab overflow detection fixes
+- **v1.0.4** - Tab condensing improvements, selected tab positioning
 - **v1.0.3** - Dark mode improvements, tab overflow fixes, UI refinements
 - **v1.0.2** - Tab color cycling, fish-eye hover effect for tabs
 - **v1.0.1** - Initial release with core features
 
 ## Future Enhancements
 
-- [ ] Google Drive API integration for cloud storage
-- [ ] User authentication (Google Sign-In)
+- [x] Google Drive API integration for cloud storage
+- [x] User authentication (Google Sign-In)
 - [ ] Collaborative editing
 - [ ] Export/Import functionality
 - [ ] Mobile-responsive improvements

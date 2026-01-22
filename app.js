@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "1.0.5";
+  const APP_VERSION = "2.0.0";
 
   // --- Internal Icon Components ---
   const IconBase = ({ children, size = 24, className = "" }) => (
