@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "1.0.2";
+  const APP_VERSION = "1.0.3";
 
   // --- Internal Icon Components ---
   const IconBase = ({ children, size = 24, className = "" }) => (
@@ -686,17 +686,26 @@
     }, [editingTabId]);
 
     // Detect tab bar overflow for fish-eye effect
+    // Uses calculated full-width requirement to avoid feedback loop
     useEffect(() => {
         const checkOverflow = () => {
             if (tabBarRef.current) {
                 const container = tabBarRef.current;
-                // Check if tabs overflow the container
-                setTabsOverflow(container.scrollWidth > container.clientWidth + 10);
+                const containerWidth = container.clientWidth;
+                // Find current notebook's tab count
+                const notebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+                const tabCount = notebook?.tabs?.length || 0;
+                // Calculate what width would be needed at full tab width
+                const fullTabWidth = 140; // Average full tab width
+                const addButtonWidth = 40;
+                const spacing = tabCount * 4; // space-x-1 = 4px per gap
+                const padding = 16; // Container padding
+                const requiredWidth = (tabCount * fullTabWidth) + addButtonWidth + spacing + padding;
+                setTabsOverflow(requiredWidth > containerWidth);
             }
         };
         checkOverflow();
         window.addEventListener('resize', checkOverflow);
-        // Also check when tabs change
         const timeout = setTimeout(checkOverflow, 100);
         return () => {
             window.removeEventListener('resize', checkOverflow);
@@ -1504,13 +1513,20 @@
     };
 
     const getTabColorClasses = (colorName, isActive) => {
+        // Inactive tab colors with dark mode variants
         const colors = {
-            gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800', red: 'bg-red-100 hover:bg-red-200 text-red-800',
-            orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800', amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800',
-            green: 'bg-green-100 hover:bg-green-200 text-green-800', teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800',
-            blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800', indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800',
-            purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800', pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800',
+            gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200',
+            red: 'bg-red-100 hover:bg-red-200 text-red-800 dark:bg-red-900 dark:hover:bg-red-800 dark:text-red-200',
+            orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-200',
+            amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900 dark:hover:bg-amber-800 dark:text-amber-200',
+            green: 'bg-green-100 hover:bg-green-200 text-green-800 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-200',
+            teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800 dark:bg-teal-900 dark:hover:bg-teal-800 dark:text-teal-200',
+            blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-200',
+            indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800 dark:bg-indigo-900 dark:hover:bg-indigo-800 dark:text-indigo-200',
+            purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-900 dark:hover:bg-purple-800 dark:text-purple-200',
+            pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800 dark:bg-pink-900 dark:hover:bg-pink-800 dark:text-pink-200',
         };
+        // Active tab colors - solid colors work well in both modes
         const activeColors = {
              gray: 'bg-gray-500 text-white', red: 'bg-red-500 text-white', orange: 'bg-orange-500 text-white',
              amber: 'bg-amber-500 text-white', green: 'bg-green-600 text-white', teal: 'bg-teal-600 text-white',
@@ -1630,7 +1646,7 @@
         {/* NOTEBOOKS SIDEBAR */}
         <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-200 bg-gray-900 text-gray-300 transition-all duration-200`}>
           <div className={`p-4 border-b border-gray-800 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
-              {!settings.condensedView && <span className="font-bold text-white flex items-center gap-2 text-lg"><Book size={18}/> Notebooks</span>}
+              {!settings.condensedView && <span className="font-bold text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
               <button onClick={addNotebook} className="hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1729,9 +1745,10 @@
           {activeNotebook ? (
                <div 
                    ref={tabBarRef}
-                   className={`h-12 flex-shrink-0 bg-gray-100 border-b border-gray-300 flex items-end px-2 space-x-1 ${tabsOverflow ? '' : 'overflow-x-auto no-scrollbar'}`}
+                   className={`h-12 flex-shrink-0 bg-gray-100 border-b border-gray-300 flex items-end px-2 ${tabsOverflow ? 'overflow-hidden' : 'overflow-x-auto no-scrollbar'}`}
                    onMouseLeave={() => setHoveredTabId(null)}
                >
+               <div className={`flex items-end space-x-1 ${tabsOverflow ? 'flex-1 min-w-0' : ''}`}>
                {activeNotebook.tabs.map((tab, index) => {
                  const tabStyle = getTabStyle(tab.id, index, activeNotebook.tabs);
                  const showName = shouldShowTabName(tab.id, index, activeNotebook.tabs);
@@ -1741,7 +1758,7 @@
                  return (
                  <div 
                      key={tab.id} 
-                     className="group relative tab-fish-eye" 
+                     className="group relative tab-fish-eye flex-shrink-0" 
                      style={tabStyle}
                      draggable={!editingTabId} 
                      onDragStart={(e) => handleNavDragStart(e, 'tab', tab.id, index)} 
@@ -1755,9 +1772,10 @@
                          title={(!showName || settings.condensedView) ? tab.name : undefined}
                      >
                       <span 
-                          className={`text-sm flex-shrink-0 ${(settings.condensedView || isCondensedMode) ? '' : 'cursor-pointer hover:bg-black/10'} rounded px-0.5 tab-icon-trigger`} 
+                          className={`text-sm flex-shrink-0 ${(!tabsOverflow && !settings.condensedView) || showDetails ? 'cursor-pointer hover:bg-black/10' : ''} rounded px-0.5 tab-icon-trigger`} 
                           onClick={(e) => { 
-                              if (settings.condensedView || isCondensedMode) return;
+                              // Only allow icon change when not in condensed mode and tab is expanded (showDetails)
+                              if (settings.condensedView || (tabsOverflow && !showDetails)) return;
                               e.stopPropagation(); 
                               const rect = e.currentTarget.getBoundingClientRect();
                               setTabIconPicker({ id: tab.id, top: rect.bottom + 5, left: rect.left });
@@ -1797,7 +1815,8 @@
                  </div>
                  );
                })}
-               <button onClick={addTab} className="mb-2 p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors flex-shrink-0"><Plus size={18}/></button>
+               </div>
+               <button onClick={addTab} className="mb-2 ml-1 p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors flex-shrink-0"><Plus size={18}/></button>
              </div>
           ) : (
               <div className="h-12 bg-gray-100 border-b border-gray-300 flex items-center px-4 text-gray-400">Select a notebook</div>
@@ -1940,7 +1959,7 @@
                                   </div>
                               )}
 
-                              <div className="flex items-end -mt-10 mb-4 ml-4 gap-2">
+                              <div className="flex items-end -mt-10 mb-4 gap-1">
                                   <button 
                                       onClick={() => toggleStar(activePage.id, activeNotebookId, activeTabId)} 
                                       className={`p-2 rounded-lg transition-colors ${activePage.starred ? 'text-yellow-400 hover:bg-yellow-50' : 'text-gray-300 hover:text-yellow-400 hover:bg-gray-100'}`}
@@ -1969,7 +1988,7 @@
 
                               <div className="mb-8 border-b border-gray-100 pb-4">
                                    <div className="flex items-start gap-3">
-                                       <input ref={titleInputRef} className="text-4xl font-bold flex-1 outline-none placeholder-gray-300 py-3 leading-normal" value={activePage.name} onChange={(e) => renameItem('page', activePage.id, e.target.value)} onClick={(e) => e.target.select()} onKeyDown={handleTitleKeyDown} />
+                                       <input ref={titleInputRef} className="text-4xl font-bold flex-1 outline-none placeholder-gray-300 py-3 leading-normal bg-transparent" value={activePage.name} onChange={(e) => renameItem('page', activePage.id, e.target.value)} onClick={(e) => e.target.select()} onKeyDown={handleTitleKeyDown} />
                                    </div>
                                    <div className="text-gray-400 text-xs mt-2 flex gap-4">
                                       <span>Created: Today {new Date(activePage.createdAt).toLocaleDateString()} {new Date(activePage.createdAt).toLocaleTimeString()} • {activePage.rows.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0)} blocks</span>
