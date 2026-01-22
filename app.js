@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "1.0.4";
+  const APP_VERSION = "1.0.5";
 
   // --- Internal Icon Components ---
   const IconBase = ({ children, size = 24, className = "" }) => (
@@ -687,31 +687,28 @@
 
     // Detect tab bar overflow for fish-eye effect
     // Uses calculated full-width requirement to avoid feedback loop
+    const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+    const tabCount = activeNotebook?.tabs?.length || 0;
+    
     useEffect(() => {
         const checkOverflow = () => {
             if (tabBarRef.current) {
-                const container = tabBarRef.current;
-                const containerWidth = container.clientWidth;
-                // Find current notebook's tab count
-                const notebook = data.notebooks.find(nb => nb.id === activeNotebookId);
-                const tabCount = notebook?.tabs?.length || 0;
+                const containerWidth = tabBarRef.current.clientWidth;
                 // Calculate what width would be needed at full tab width
                 const fullTabWidth = 140; // Average full tab width
-                const addButtonWidth = 40;
+                const addButtonWidth = 50; // + button width with margin
                 const spacing = tabCount * 4; // space-x-1 = 4px per gap
                 const padding = 16; // Container padding
-                const requiredWidth = (tabCount * fullTabWidth) + addButtonWidth + spacing + padding;
+                const safetyMargin = 40; // Buffer to catch overflow BEFORE + goes off-screen
+                const requiredWidth = (tabCount * fullTabWidth) + addButtonWidth + spacing + padding + safetyMargin;
                 setTabsOverflow(requiredWidth > containerWidth);
             }
         };
-        checkOverflow();
+        // Use RAF to ensure DOM is updated before measuring
+        requestAnimationFrame(checkOverflow);
         window.addEventListener('resize', checkOverflow);
-        const timeout = setTimeout(checkOverflow, 100);
-        return () => {
-            window.removeEventListener('resize', checkOverflow);
-            clearTimeout(timeout);
-        };
-    }, [data, activeNotebookId, settings.condensedView]);
+        return () => window.removeEventListener('resize', checkOverflow);
+    }, [tabCount, settings.condensedView]);
 
     useEffect(() => {
       const handleClickOutside = (e) => {
@@ -1511,20 +1508,20 @@
     };
 
     const getTabColorClasses = (colorName, isActive) => {
-        // Inactive tab colors with dark mode variants
+        // Inactive tab colors - pastel colors that stay consistent in light/dark mode
         const colors = {
-            gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200',
-            red: 'bg-red-100 hover:bg-red-200 text-red-800 dark:bg-red-900 dark:hover:bg-red-800 dark:text-red-200',
-            orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-200',
-            amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900 dark:hover:bg-amber-800 dark:text-amber-200',
-            green: 'bg-green-100 hover:bg-green-200 text-green-800 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-200',
-            teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800 dark:bg-teal-900 dark:hover:bg-teal-800 dark:text-teal-200',
-            blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-200',
-            indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800 dark:bg-indigo-900 dark:hover:bg-indigo-800 dark:text-indigo-200',
-            purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-900 dark:hover:bg-purple-800 dark:text-purple-200',
-            pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800 dark:bg-pink-900 dark:hover:bg-pink-800 dark:text-pink-200',
+            gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800',
+            red: 'bg-red-100 hover:bg-red-200 text-red-800',
+            orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800',
+            amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800',
+            green: 'bg-green-100 hover:bg-green-200 text-green-800',
+            teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800',
+            blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800',
+            indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800',
+            purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800',
+            pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800',
         };
-        // Active tab colors - solid colors work well in both modes
+        // Active tab colors - solid colors
         const activeColors = {
              gray: 'bg-gray-500 text-white', red: 'bg-red-500 text-white', orange: 'bg-orange-500 text-white',
              amber: 'bg-amber-500 text-white', green: 'bg-green-600 text-white', teal: 'bg-teal-600 text-white',
