@@ -20,10 +20,14 @@ A modern, block-based note-taking web application designed to be hosted on GitHu
 
 ```
 Strata/
-├── index.html    # Main HTML entry point
-├── styles.css    # Custom CSS styles (dark mode, animations, etc.)
-├── app.js        # React application (JSX, uses Babel for transpilation)
-└── README.md     # This file
+├── index.html          # Main HTML entry point
+├── styles.css          # Custom CSS styles (dark mode, animations, etc.)
+├── app.js              # React application (JSX, uses Babel for transpilation)
+├── google-api.js       # Google Drive API helper module
+├── config.js           # Google API credentials (create from config.example.js)
+├── config.example.js  # Template for config.js
+├── .gitignore          # Excludes config.js from git
+└── README.md           # This file
 ```
 
 ## Features
@@ -36,17 +40,68 @@ Strata/
 - **Favorites** - Star pages for quick access
 - **Tab color cycling** - New tabs automatically cycle through colors
 - **Responsive tabs** - Fish-eye hover effect when tabs overflow (condenses tabs, expands on hover)
-- **Google Embeds** - Embed Docs, Sheets, Slides (requires proper hosting)
+- **Google Drive Integration** - Cloud storage with automatic sync
+- **Google Drive File Embedding** - Embed Docs, Sheets, Slides via `/gdoc` command
+- **File Uploads** - Drag & drop images/PDFs to upload to Drive folders
 - **PDF Viewing** - Embed PDFs from URLs or Google Drive
-- **Local Storage** - Data persists in browser
+- **Local Storage Fallback** - Works offline without Google sign-in
 
 ## Data Storage
 
-Currently uses `localStorage` for persistence:
-- `note-app-data-v1` - All notebooks, tabs, pages, and blocks
-- `note-app-settings-v1` - Theme and display preferences
+Strata now supports **Google Drive** as the primary storage backend, with localStorage as a fallback for offline use.
 
-**Future:** Will integrate with Google Drive API for cloud storage ("Zero-Database" architecture).
+### Google Drive Integration
+
+**Storage Architecture:**
+- **Manifest File** (`strata_manifest.json`): Stored in Google Drive's `appDataFolder` (hidden, app-specific)
+  - Contains all notebooks, tabs, pages, blocks, and settings
+  - Automatically synced with debounced saves (500ms)
+- **Folder Structure**: Mirrors your Notebook/Tab hierarchy in "My Drive"
+  - Root folder: `Strata Notebooks`
+  - Each Notebook → Drive folder
+  - Each Tab → Drive folder (nested under Notebook folder)
+  - Uploaded files (images, PDFs) → Stored in Tab folders
+
+**Setup Instructions:**
+
+1. **Create Google Cloud Project:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select existing
+   - Enable "Google Drive API"
+
+2. **Configure OAuth 2.0:**
+   - Go to "APIs & Services" → "Credentials"
+   - Create "OAuth 2.0 Client ID" (Web application)
+   - Add authorized JavaScript origins:
+     - `http://localhost:8000` (for local testing)
+     - `https://yourusername.github.io` (for GitHub Pages)
+   - Add authorized redirect URIs (same as origins)
+
+3. **Create API Key:**
+   - In "Credentials", create an "API Key"
+   - Restrict to "Google Drive API" (optional but recommended)
+
+4. **Configure the App:**
+   - Copy `config.example.js` to `config.js`
+   - Replace `YOUR_CLIENT_ID_HERE` with your OAuth Client ID
+   - Replace `YOUR_API_KEY_HERE` with your API Key
+
+5. **Deploy:**
+   - Ensure `config.js` is in `.gitignore` (already configured)
+   - Deploy to GitHub Pages or your static host
+   - Users will sign in with Google on first use
+
+**Features:**
+- Automatic data migration from localStorage on first Google sign-in
+- Real-time sync to Google Drive (debounced)
+- Folder structure mirrors Notebook/Tab organization
+- File uploads (drag & drop images/PDFs) → Stored in Drive
+- Google Drive file embedding (`/gdoc` command)
+
+**Fallback Mode:**
+- If not signed in, app uses `localStorage`:
+  - `note-app-data-v1` - All notebooks, tabs, pages, and blocks
+  - `note-app-settings-v1` - Theme and display preferences
 
 ## Deployment to GitHub Pages
 

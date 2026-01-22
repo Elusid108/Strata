@@ -79,6 +79,7 @@
     { cmd: 'vid', aliases: ['vid', 'video', 'youtube'], label: 'Video', desc: 'Embed YouTube video', type: 'video' },
     { cmd: 'link', aliases: ['link', 'url', 'bookmark'], label: 'Link', desc: 'Web bookmark', type: 'link' },
     { cmd: 'div', aliases: ['div', 'divider', 'hr', 'line'], label: 'Divider', desc: 'Horizontal line', type: 'divider' },
+    { cmd: 'gdoc', aliases: ['gdoc', 'gdrive', 'google'], label: 'Google Drive File', desc: 'Embed Google Doc/Sheet/Slide', type: 'gdoc' },
   ];
 
   const BG_COLORS = {
@@ -531,6 +532,68 @@
                           </div>
                       )}
                       {block.type === 'divider' && <div className="py-2"><hr className="border-t-2 border-gray-200" /></div>}
+                      {block.type === 'gdoc' && (
+                          <div className="space-y-2">
+                              {block.driveFileId ? (
+                                  <div className="border rounded overflow-hidden shadow-sm">
+                                      {block.mimeType === 'application/vnd.google-apps.document' && (
+                                          <iframe 
+                                              src={`https://docs.google.com/document/d/${block.driveFileId}/preview`}
+                                              className="w-full h-96 border-0"
+                                              title="Google Doc"
+                                          />
+                                      )}
+                                      {block.mimeType === 'application/vnd.google-apps.spreadsheet' && (
+                                          <iframe 
+                                              src={`https://docs.google.com/spreadsheets/d/${block.driveFileId}/preview`}
+                                              className="w-full h-96 border-0"
+                                              title="Google Sheet"
+                                          />
+                                      )}
+                                      {block.mimeType === 'application/vnd.google-apps.presentation' && (
+                                          <iframe 
+                                              src={`https://docs.google.com/presentation/d/${block.driveFileId}/preview`}
+                                              className="w-full h-96 border-0"
+                                              title="Google Slide"
+                                          />
+                                      )}
+                                      {block.webViewLink && (
+                                          <div className="p-2 bg-gray-50 border-t flex items-center justify-between">
+                                              <a href={block.webViewLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                                  Open in Google Drive
+                                              </a>
+                                              <button onClick={() => onUpdate({ driveFileId: null, webViewLink: null, mimeType: null })} className="text-xs text-gray-500 hover:text-red-600">
+                                                  Remove
+                                              </button>
+                                          </div>
+                                      )}
+                                  </div>
+                              ) : (
+                                  <div className="bg-gray-100 p-4 rounded text-center border-2 border-dashed border-gray-300">
+                                      {typeof GoogleAPI !== 'undefined' && isAuthenticated ? (
+                                          <button 
+                                              onClick={() => {
+                                                  GoogleAPI.showDrivePicker((file) => {
+                                                      onUpdate({
+                                                          driveFileId: file.id,
+                                                          webViewLink: file.url,
+                                                          mimeType: file.mimeType
+                                                      });
+                                                  });
+                                              }}
+                                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                          >
+                                              Select Google Drive File
+                                          </button>
+                                      ) : (
+                                          <div className="text-sm text-gray-500">
+                                              Sign in with Google to embed Drive files
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+                          </div>
+                      )}
                   </div>
               </div>
               {showLightbox && block.url && <ImageLightbox src={block.url} onClose={() => setShowLightbox(false)} />}
@@ -599,44 +662,256 @@
     const [hoveredTabId, setHoveredTabId] = useState(null);
     const tabBarRef = useRef(null);
 
+    // Google Drive authentication state
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+    const [userEmail, setUserEmail] = useState(null);
+
+    // Initialize Google APIs and check auth status
     useEffect(() => {
-      // Load settings
-      const savedSettings = localStorage.getItem('note-app-settings-v1');
-      if (savedSettings) {
-        try {
-          setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) });
-        } catch (e) { console.error(e); }
-      }
-      
-      // Load data
-      const saved = localStorage.getItem('note-app-data-v1');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setData(parsed);
-          if (parsed.notebooks.length > 0) {
-            const firstNb = parsed.notebooks[0];
-            setActiveNotebookId(firstNb.id);
-            const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-            setActiveTabId(tabId);
-            if(tabId) {
-               const tab = firstNb.tabs.find(t => t.id === tabId);
-               if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+        const initAuth = async () => {
+            try {
+                if (typeof GoogleAPI === 'undefined') {
+                    console.warn('Google API not loaded, using localStorage fallback');
+                    setIsLoadingAuth(false);
+                    return;
+                }
+
+                await GoogleAPI.loadGapi();
+                await GoogleAPI.initGoogleAuth();
+                
+                const authenticated = await GoogleAPI.checkAuthStatus();
+                setIsAuthenticated(authenticated);
+                
+                if (authenticated) {
+                    const userInfo = await GoogleAPI.getUserInfo();
+                    setUserEmail(userInfo.email);
+                }
+            } catch (error) {
+                console.error('Error initializing Google auth:', error);
+                setIsAuthenticated(false);
+            } finally {
+                setIsLoadingAuth(false);
             }
-          }
-        } catch (e) { console.error(e); }
-      } else {
-        setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
-        setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
-        setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
-      }
+        };
+
+        initAuth();
     }, []);
 
-    useEffect(() => { localStorage.setItem('note-app-data-v1', JSON.stringify(data)); }, [data]);
+    // Handle sign in
+    const handleSignIn = async () => {
+        try {
+            setIsLoadingAuth(true);
+            const userInfo = await GoogleAPI.signIn();
+            setIsAuthenticated(true);
+            setUserEmail(userInfo.email);
+            showNotification('Signed in successfully', 'success');
+            
+            // Trigger data load from Drive
+            window.location.reload(); // Simple reload to trigger Drive load
+        } catch (error) {
+            console.error('Sign in error:', error);
+            showNotification('Sign in failed', 'error');
+        } finally {
+            setIsLoadingAuth(false);
+        }
+    };
+
+    // Handle sign out
+    const handleSignOut = () => {
+        GoogleAPI.signOut();
+        setIsAuthenticated(false);
+        setUserEmail(null);
+        showNotification('Signed out', 'info');
+        // Reload to reset to localStorage
+        window.location.reload();
+    };
+
+    useEffect(() => {
+      const loadData = async () => {
+        // Wait for auth to finish loading
+        if (isLoadingAuth) return;
+
+        if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
+          // Load from Google Drive
+          try {
+            const manifest = await GoogleAPI.getAppDataFile();
+            if (manifest) {
+              // Load data from manifest
+              if (manifest.data) {
+                setData(manifest.data);
+                if (manifest.data.notebooks.length > 0) {
+                  const firstNb = manifest.data.notebooks[0];
+                  setActiveNotebookId(firstNb.id);
+                  const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+                  setActiveTabId(tabId);
+                  if(tabId) {
+                     const tab = firstNb.tabs.find(t => t.id === tabId);
+                     if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+                  }
+                }
+              }
+              
+              // Load settings from manifest
+              if (manifest.settings) {
+                setSettings({ ...DEFAULT_SETTINGS, ...manifest.settings });
+              }
+            } else {
+              // No manifest found, check for localStorage migration
+              const saved = localStorage.getItem('note-app-data-v1');
+              if (saved) {
+                try {
+                  const parsed = JSON.parse(saved);
+                  // Migrate to Drive
+                  await GoogleAPI.createAppDataFile({
+                    data: parsed,
+                    settings: JSON.parse(localStorage.getItem('note-app-settings-v1') || '{}'),
+                    version: APP_VERSION,
+                    lastModified: Date.now()
+                  });
+                  setData(parsed);
+                  if (parsed.notebooks.length > 0) {
+                    const firstNb = parsed.notebooks[0];
+                    setActiveNotebookId(firstNb.id);
+                    const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+                    setActiveTabId(tabId);
+                    if(tabId) {
+                       const tab = firstNb.tabs.find(t => t.id === tabId);
+                       if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+                    }
+                  }
+                  showNotification('Data migrated to Google Drive', 'success');
+                } catch (e) {
+                  console.error('Migration error:', e);
+                  // Fall through to INITIAL_DATA
+                }
+              } else {
+                // Create initial manifest
+                await GoogleAPI.createAppDataFile({
+                  data: INITIAL_DATA,
+                  settings: DEFAULT_SETTINGS,
+                  version: APP_VERSION,
+                  lastModified: Date.now()
+                });
+                setData(INITIAL_DATA);
+                setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
+                setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
+                setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
+              }
+            }
+          } catch (error) {
+            console.error('Error loading from Drive:', error);
+            if (error.message.includes('Authentication')) {
+              showNotification('Authentication expired. Please sign in again.', 'error');
+            } else {
+              showNotification('Failed to load from Drive. Using local storage.', 'error');
+              // Fallback to localStorage
+              loadFromLocalStorage();
+            }
+          }
+        } else {
+          // Not authenticated, use localStorage
+          loadFromLocalStorage();
+        }
+      };
+
+      const loadFromLocalStorage = () => {
+        // Load settings
+        const savedSettings = localStorage.getItem('note-app-settings-v1');
+        if (savedSettings) {
+          try {
+            setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) });
+          } catch (e) { console.error(e); }
+        }
+        
+        // Load data
+        const saved = localStorage.getItem('note-app-data-v1');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setData(parsed);
+            if (parsed.notebooks.length > 0) {
+              const firstNb = parsed.notebooks[0];
+              setActiveNotebookId(firstNb.id);
+              const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+              setActiveTabId(tabId);
+              if(tabId) {
+                 const tab = firstNb.tabs.find(t => t.id === tabId);
+                 if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+              }
+            }
+          } catch (e) { console.error(e); }
+        } else {
+          setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
+          setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
+          setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
+        }
+      };
+
+      loadData();
+    }, [isAuthenticated, isLoadingAuth]);
+
+    // Debounced save to Drive or localStorage
+    const debouncedSave = useRef(null);
+    
+    useEffect(() => {
+        if (isLoadingAuth) return;
+
+        // Clear existing timeout
+        if (debouncedSave.current) {
+            clearTimeout(debouncedSave.current);
+        }
+
+        // Debounce saves (500ms)
+        debouncedSave.current = setTimeout(async () => {
+            if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
+                // Save to Google Drive
+                try {
+                    await GoogleAPI.updateAppDataFile({
+                        data: data,
+                        settings: settings,
+                        version: APP_VERSION,
+                        lastModified: Date.now()
+                    });
+                } catch (error) {
+                    console.error('Failed to save to Drive:', error);
+                    if (error.message.includes('Authentication')) {
+                        showNotification('Authentication expired. Please sign in again.', 'error');
+                    } else {
+                        showNotification('Save failed. Retrying...', 'error');
+                        // Retry once after a delay
+                        setTimeout(async () => {
+                            try {
+                                await GoogleAPI.updateAppDataFile({
+                                    data: data,
+                                    settings: settings,
+                                    version: APP_VERSION,
+                                    lastModified: Date.now()
+                                });
+                            } catch (retryError) {
+                                console.error('Retry save failed:', retryError);
+                            }
+                        }, 2000);
+                    }
+                }
+            } else {
+                // Fallback to localStorage
+                localStorage.setItem('note-app-data-v1', JSON.stringify(data));
+            }
+        }, 500);
+
+        return () => {
+            if (debouncedSave.current) {
+                clearTimeout(debouncedSave.current);
+            }
+        };
+    }, [data, settings, isAuthenticated, isLoadingAuth]);
     
     // Save settings and apply theme
     useEffect(() => { 
-        localStorage.setItem('note-app-settings-v1', JSON.stringify(settings));
+        if (!isAuthenticated || typeof GoogleAPI === 'undefined') {
+            localStorage.setItem('note-app-settings-v1', JSON.stringify(settings));
+        }
         // Apply theme
         const root = document.documentElement;
         let effectiveTheme = settings.theme;
@@ -645,7 +920,7 @@
         }
         root.classList.remove('light', 'dark');
         root.classList.add(effectiveTheme);
-    }, [settings]);
+    }, [settings, isAuthenticated]);
     
     // Focus sidebar nav item logic
     useEffect(() => {
@@ -684,6 +959,72 @@
             }, 50);
         }
     }, [editingTabId]);
+
+    // Sync Notebook/Tab structure to Drive folders
+    useEffect(() => {
+        if (!isAuthenticated || isLoadingAuth || typeof GoogleAPI === 'undefined') return;
+
+        const syncFolders = async () => {
+            try {
+                // Ensure root folder exists
+                const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
+
+                // Sync each notebook
+                for (const notebook of data.notebooks) {
+                    if (!notebook.driveFolderId) {
+                        // Create folder for notebook
+                        try {
+                            const folder = await GoogleAPI.createDriveFolder(notebook.name, rootFolderId);
+                            // Update notebook with driveFolderId
+                            setData(prev => ({
+                                ...prev,
+                                notebooks: prev.notebooks.map(nb =>
+                                    nb.id === notebook.id ? { ...nb, driveFolderId: folder.id } : nb
+                                )
+                            }));
+                        } catch (error) {
+                            console.error(`Error creating folder for notebook ${notebook.name}:`, error);
+                        }
+                    } else {
+                        // Check if name changed and update folder
+                        // (This will be handled by renameItem, but we can verify here)
+                    }
+
+                    // Sync tabs within this notebook
+                    if (notebook.driveFolderId) {
+                        for (const tab of notebook.tabs) {
+                            if (!tab.driveFolderId) {
+                                // Create folder for tab
+                                try {
+                                    const folder = await GoogleAPI.createDriveFolder(tab.name, notebook.driveFolderId);
+                                    // Update tab with driveFolderId
+                                    setData(prev => ({
+                                        ...prev,
+                                        notebooks: prev.notebooks.map(nb =>
+                                            nb.id === notebook.id ? {
+                                                ...nb,
+                                                tabs: nb.tabs.map(t =>
+                                                    t.id === tab.id ? { ...t, driveFolderId: folder.id } : t
+                                                )
+                                            } : nb
+                                        )
+                                    }));
+                                } catch (error) {
+                                    console.error(`Error creating folder for tab ${tab.name}:`, error);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error syncing folders:', error);
+            }
+        };
+
+        // Debounce folder sync to avoid excessive API calls
+        const syncTimeout = setTimeout(syncFolders, 1000);
+        return () => clearTimeout(syncTimeout);
+    }, [data.notebooks, isAuthenticated, isLoadingAuth]);
 
     // Detect tab bar overflow for fish-eye effect
     // Uses calculated full-width requirement to avoid feedback loop
@@ -1232,9 +1573,9 @@
       showNotification('Page updated', 'success');
     };
 
-    const addBlock = (type) => {
+    const addBlock = (type, initialData = {}) => {
         if (!activePage) return;
-        const newBlock = { id: generateId(), type, content: '', url: '' };
+        const newBlock = { id: generateId(), type, content: '', url: '', ...initialData };
         const newRow = { id: generateId(), columns: [{ id: generateId(), blocks: [newBlock] }] };
         updatePageContent([...activePage.rows, newRow], true);
         setShowAddMenu(false);
@@ -1306,13 +1647,29 @@
         setTabIconPicker(null);
     };
 
-    const renameItem = (type, id, newName) => {
+    const renameItem = async (type, id, newName) => {
         setData(prev => {
             const next = JSON.parse(JSON.stringify(prev));
             next.notebooks.forEach(nb => {
-                if (type === 'notebook' && nb.id === id) nb.name = newName;
+                if (type === 'notebook' && nb.id === id) {
+                    nb.name = newName;
+                    // Update Drive folder name if authenticated
+                    if (isAuthenticated && typeof GoogleAPI !== 'undefined' && nb.driveFolderId) {
+                        GoogleAPI.updateDriveFolder(nb.driveFolderId, newName).catch(err => {
+                            console.error('Error updating notebook folder:', err);
+                        });
+                    }
+                }
                 nb.tabs.forEach(tab => {
-                    if (type === 'tab' && tab.id === id) tab.name = newName;
+                    if (type === 'tab' && tab.id === id) {
+                        tab.name = newName;
+                        // Update Drive folder name if authenticated
+                        if (isAuthenticated && typeof GoogleAPI !== 'undefined' && tab.driveFolderId) {
+                            GoogleAPI.updateDriveFolder(tab.driveFolderId, newName).catch(err => {
+                                console.error('Error updating tab folder:', err);
+                            });
+                        }
+                    }
                     tab.pages.forEach(pg => {
                         if (pg.id === id) pg.name = newName;
                     });
@@ -1324,12 +1681,15 @@
 
     const initiateDelete = (type, id) => setItemToDelete({ type, id });
 
-    const executeDelete = (type, id) => {
+    const executeDelete = async (type, id) => {
         saveToHistory();
         const newData = JSON.parse(JSON.stringify(data));
         let nextId = null;
+        let driveFolderIdToDelete = null;
 
         if(type === 'notebook') {
+             const notebook = newData.notebooks.find(n => n.id === id);
+             driveFolderIdToDelete = notebook?.driveFolderId;
              const idx = newData.notebooks.findIndex(n => n.id === id);
              if (activeNotebookId === id) {
                  if (idx < newData.notebooks.length - 1) nextId = newData.notebooks[idx + 1].id;
@@ -1341,6 +1701,8 @@
              for (let nb of newData.notebooks) {
                  if (nb.id !== activeNotebookId) continue;
                  if (type === 'tab') {
+                     const tab = nb.tabs.find(t => t.id === id);
+                     driveFolderIdToDelete = tab?.driveFolderId;
                      const idx = nb.tabs.findIndex(t => t.id === id);
                      if (activeTabId === id) {
                          if (idx < nb.tabs.length - 1) nextId = nb.tabs[idx + 1].id;
@@ -1367,6 +1729,17 @@
                  }
              }
         }
+        
+        // Delete Drive folder if authenticated
+        if (isAuthenticated && typeof GoogleAPI !== 'undefined' && driveFolderIdToDelete) {
+            try {
+                await GoogleAPI.deleteDriveFolder(driveFolderIdToDelete);
+            } catch (error) {
+                console.error('Error deleting Drive folder:', error);
+                // Continue with local delete even if Drive delete fails
+            }
+        }
+        
         setData(newData);
         saveToHistory(newData);
         if (itemToDelete && itemToDelete.id === id) setItemToDelete(null);
@@ -1746,14 +2119,42 @@
             ))}
           </div>
           {/* Bottom toolbar */}
-          <div className={`p-2 border-t border-gray-800 flex ${settings.condensedView ? 'flex-col gap-1' : 'justify-center gap-2'}`}>
-              <button onClick={() => setSettings(s => ({...s, condensedView: !s.condensedView}))} className="hover:bg-gray-800 p-2 rounded transition-colors" title={settings.condensedView ? "Expand view" : "Compact view"}>
-                  {settings.condensedView ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
-              </button>
-              <button onClick={() => setShowSettings(true)} className="hover:bg-gray-800 p-2 rounded transition-colors settings-trigger" title="Settings">
-                  <Settings size={18} />
-              </button>
-              {!settings.condensedView && <span className="text-xs text-gray-600 ml-auto self-center" title="App Version">v{APP_VERSION}</span>}
+          <div className={`p-2 border-t border-gray-800 flex flex-col gap-2`}>
+              <div className={`flex ${settings.condensedView ? 'flex-col gap-1' : 'justify-center gap-2'}`}>
+                  <button onClick={() => setSettings(s => ({...s, condensedView: !s.condensedView}))} className="hover:bg-gray-800 p-2 rounded transition-colors" title={settings.condensedView ? "Expand view" : "Compact view"}>
+                      {settings.condensedView ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+                  </button>
+                  <button onClick={() => setShowSettings(true)} className="hover:bg-gray-800 p-2 rounded transition-colors settings-trigger" title="Settings">
+                      <Settings size={18} />
+                  </button>
+              </div>
+              
+              {/* Google Drive Authentication */}
+              {!settings.condensedView && (
+                  <div className="border-t border-gray-700 pt-2">
+                      {isLoadingAuth ? (
+                          <div className="text-xs text-gray-500 text-center">Loading...</div>
+                      ) : isAuthenticated ? (
+                          <div className="flex flex-col gap-1">
+                              <div className="text-xs text-gray-400 truncate" title={userEmail}>{userEmail}</div>
+                              <button onClick={handleSignOut} className="text-xs text-red-400 hover:text-red-300 w-full text-left px-1">
+                                  Sign Out
+                              </button>
+                          </div>
+                      ) : (
+                          <button 
+                              onClick={handleSignIn} 
+                              className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                              disabled={typeof GoogleAPI === 'undefined'}
+                          >
+                              <GoogleG size={14} />
+                              Sign in with Google
+                          </button>
+                      )}
+                  </div>
+              )}
+              
+              {!settings.condensedView && <span className="text-xs text-gray-600 text-center" title="App Version">v{APP_VERSION}</span>}
           </div>
         </div>
 
@@ -2013,8 +2414,61 @@
                               </div>
                               <div 
                                   className="space-y-2"
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onDrop={handleDrop}
+                                  onDragOver={(e) => {
+                                      e.preventDefault();
+                                      // Check if dragging files
+                                      if (e.dataTransfer.types.includes('Files')) {
+                                          e.dataTransfer.dropEffect = 'copy';
+                                      }
+                                  }}
+                                  onDrop={async (e) => {
+                                      e.preventDefault();
+                                      
+                                      // Check if files are being dropped
+                                      const files = Array.from(e.dataTransfer.files);
+                                      if (files.length > 0 && isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
+                                          // Upload files to Drive
+                                          for (const file of files) {
+                                              try {
+                                                  const uploadedFile = await GoogleAPI.uploadFileToDrive(
+                                                      file,
+                                                      activeTab.driveFolderId,
+                                                      file.name
+                                                  );
+                                                  
+                                                  // Create image block for images, or link block for other files
+                                                  if (file.type.startsWith('image/')) {
+                                                      const newBlock = {
+                                                          id: generateId(),
+                                                          type: 'image',
+                                                          url: uploadedFile.webViewLink,
+                                                          driveFileId: uploadedFile.id
+                                                      };
+                                                      addBlock('image', newBlock);
+                                                  } else {
+                                                      // For PDFs and other files, create a link block
+                                                      const newBlock = {
+                                                          id: generateId(),
+                                                          type: 'link',
+                                                          content: file.name,
+                                                          url: uploadedFile.webViewLink,
+                                                          driveFileId: uploadedFile.id
+                                                      };
+                                                      addBlock('link', newBlock);
+                                                  }
+                                                  
+                                                  showNotification(`Uploaded ${file.name}`, 'success');
+                                              } catch (error) {
+                                                  console.error('Error uploading file:', error);
+                                                  showNotification(`Failed to upload ${file.name}`, 'error');
+                                              }
+                                          }
+                                          return;
+                                      }
+                                      
+                                      // Otherwise, handle block drag-and-drop
+                                      handleDrop(e);
+                                  }}
                                   onDragEnd={() => { setDraggedBlock(null); setDropTarget(null); }}
                               >
                                   {activePage.rows.map((row) => (
@@ -2088,6 +2542,7 @@
                                         { cmd: '/vid', desc: 'video' },
                                         { cmd: '/link', desc: 'link' },
                                         { cmd: '/div', desc: 'divider' },
+                                        { cmd: '/gdoc', desc: 'Google Drive' },
                                     ].map(c => (
                                         <span key={c.cmd} className="whitespace-nowrap">
                                             <span className="font-mono font-medium">{c.cmd}</span>
