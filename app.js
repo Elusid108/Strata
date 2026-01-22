@@ -1,5 +1,8 @@
   const { useState, useEffect, useRef } = React;
 
+  // --- App Version ---
+  const APP_VERSION = "1.0.1";
+
   // --- Internal Icon Components ---
   const IconBase = ({ children, size = 24, className = "" }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -1629,6 +1632,7 @@
               <button onClick={() => setShowSettings(true)} className="hover:bg-gray-800 p-2 rounded transition-colors settings-trigger" title="Settings">
                   <Settings size={18} />
               </button>
+              {!settings.condensedView && <span className="text-xs text-gray-600 ml-auto self-center" title="App Version">v{APP_VERSION}</span>}
           </div>
         </div>
 
