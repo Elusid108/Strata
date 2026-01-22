@@ -687,13 +687,12 @@
 
     // Detect tab bar overflow for fish-eye effect
     // Uses calculated full-width requirement to avoid feedback loop
-    const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
-    const tabCount = activeNotebook?.tabs?.length || 0;
-    
     useEffect(() => {
         const checkOverflow = () => {
             if (tabBarRef.current) {
                 const containerWidth = tabBarRef.current.clientWidth;
+                const notebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+                const tabCount = notebook?.tabs?.length || 0;
                 // Calculate what width would be needed at full tab width
                 const fullTabWidth = 140; // Average full tab width
                 const addButtonWidth = 50; // + button width with margin
@@ -708,7 +707,7 @@
         requestAnimationFrame(checkOverflow);
         window.addEventListener('resize', checkOverflow);
         return () => window.removeEventListener('resize', checkOverflow);
-    }, [tabCount, settings.condensedView]);
+    }, [data, activeNotebookId, settings.condensedView]);
 
     useEffect(() => {
       const handleClickOutside = (e) => {
