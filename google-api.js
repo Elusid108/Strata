@@ -1075,6 +1075,23 @@ const updateDriveShortcut = async (shortcutId, newName) => {
     }
 };
 
+// Get a Drive item's metadata
+const getDriveItem = async (itemId) => {
+    try {
+        await ensureAuthenticated();
+        
+        const response = await gapi.client.drive.files.get({
+            fileId: itemId,
+            fields: 'id, name, mimeType, trashed'
+        });
+        
+        return response.result;
+    } catch (error) {
+        console.error('Error getting Drive item:', error);
+        throw error;
+    }
+};
+
 // Rename a Drive item (file or folder)
 const renameDriveItem = async (itemId, newName) => {
     try {
@@ -1502,6 +1519,7 @@ window.GoogleAPI = {
     syncNotebookToDrive,
     syncTabToDrive,
     syncPageToDrive,
+    getDriveItem,
     renameDriveItem,
     moveDriveItem,
     deleteDriveItem,

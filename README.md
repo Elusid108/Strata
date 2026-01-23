@@ -113,6 +113,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.3.1** - Fix sync triggers, Drive reconciliation, delete/rename sync fixes
 - **v2.3.0** - Portable backup with offline viewer, one-way sync (notebook as master)
 - **v2.2.0** - Two-way Drive sync, sync status UI improvements
 - **v2.1.0** - Drive folder mirroring, page content sync

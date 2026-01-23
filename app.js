@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.3.0";
+  const APP_VERSION = "2.3.1";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -900,7 +900,7 @@
     // Sync lock refs to prevent concurrent operations
     const syncLockRef = useRef(false);
     const pendingSyncRef = useRef(false);
-    const structureVersionRef = useRef(0);
+    const [structureVersion, setStructureVersion] = useState(0); // State-based trigger for structure sync
     const lastContentSyncRef = useRef(Date.now());
 
     // Initialize Google APIs and check auth status
@@ -1366,7 +1366,7 @@
         // Longer debounce for structure sync (5 seconds)
         const syncTimeout = setTimeout(syncStructure, 5000);
         return () => clearTimeout(syncTimeout);
-    }, [structureVersionRef.current, isAuthenticated, isLoadingAuth, driveRootFolderId]);
+    }, [structureVersion, isAuthenticated, isLoadingAuth, driveRootFolderId]);
 
     // Content sync - update page content files after user stops editing (idle detection)
     useEffect(() => {
@@ -1404,6 +1404,82 @@
         const contentSyncTimeout = setTimeout(syncContent, 10000);
         return () => clearTimeout(contentSyncTimeout);
     }, [data.notebooks, isAuthenticated, isLoadingAuth, driveRootFolderId]);
+
+    // Reconciliation - verify Drive folder/file names match the notebook and fix mismatches
+    // Runs periodically to catch any sync issues
+    useEffect(() => {
+        if (!isAuthenticated || isLoadingAuth || typeof GoogleAPI === 'undefined' || !driveRootFolderId) return;
+        
+        const reconcileDrive = async () => {
+            // Don't reconcile if sync is running
+            if (syncLockRef.current) return;
+            
+            console.log('Running Drive reconciliation...');
+            let fixCount = 0;
+            
+            for (const notebook of data.notebooks) {
+                if (notebook.driveFolderId) {
+                    try {
+                        const driveItem = await GoogleAPI.getDriveItem(notebook.driveFolderId);
+                        const expectedName = GoogleAPI.sanitizeFileName(notebook.name);
+                        if (driveItem && !driveItem.trashed && driveItem.name !== expectedName) {
+                            console.log(`Fixing notebook folder: "${driveItem.name}" -> "${expectedName}"`);
+                            await GoogleAPI.renameDriveItem(notebook.driveFolderId, expectedName);
+                            fixCount++;
+                        }
+                    } catch (error) {
+                        console.error(`Error reconciling notebook ${notebook.name}:`, error);
+                    }
+                }
+                
+                for (const tab of notebook.tabs) {
+                    if (tab.driveFolderId) {
+                        try {
+                            const driveItem = await GoogleAPI.getDriveItem(tab.driveFolderId);
+                            const expectedName = GoogleAPI.sanitizeFileName(tab.name);
+                            if (driveItem && !driveItem.trashed && driveItem.name !== expectedName) {
+                                console.log(`Fixing tab folder: "${driveItem.name}" -> "${expectedName}"`);
+                                await GoogleAPI.renameDriveItem(tab.driveFolderId, expectedName);
+                                fixCount++;
+                            }
+                        } catch (error) {
+                            console.error(`Error reconciling tab ${tab.name}:`, error);
+                        }
+                    }
+                    
+                    for (const page of tab.pages) {
+                        if (page.driveFileId) {
+                            try {
+                                const driveItem = await GoogleAPI.getDriveItem(page.driveFileId);
+                                const expectedName = GoogleAPI.sanitizeFileName(page.name) + '.json';
+                                if (driveItem && !driveItem.trashed && driveItem.name !== expectedName) {
+                                    console.log(`Fixing page file: "${driveItem.name}" -> "${expectedName}"`);
+                                    await GoogleAPI.renameDriveItem(page.driveFileId, expectedName);
+                                    fixCount++;
+                                }
+                            } catch (error) {
+                                console.error(`Error reconciling page ${page.name}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (fixCount > 0) {
+                console.log(`Reconciliation complete: fixed ${fixCount} item(s)`);
+                showNotification(`Fixed ${fixCount} Drive item(s)`, 'info');
+            }
+        };
+
+        // Run reconciliation 15 seconds after load/auth, then every 60 seconds
+        const initialReconcile = setTimeout(reconcileDrive, 15000);
+        const reconcileInterval = setInterval(reconcileDrive, 60000);
+        
+        return () => {
+            clearTimeout(initialReconcile);
+            clearInterval(reconcileInterval);
+        };
+    }, [isAuthenticated, isLoadingAuth, driveRootFolderId, data.notebooks]);
 
     // NOTE: Polling for Drive changes has been removed.
     // The notebook is now the "master" - it only PUSHES changes to Drive.
@@ -1691,7 +1767,7 @@
       setCreationFlow({ notebookId: newNb.id, tabId: newTab.id, pageId: newPage.id });
       showNotification('Notebook created', 'success');
       // Trigger structure sync
-      structureVersionRef.current++;
+      setStructureVersion(v => v + 1);
       
       // Sync to Drive if authenticated
       if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
@@ -1747,7 +1823,7 @@
       setEditingNotebookId(null);
       showNotification('Section created', 'success');
       // Trigger structure sync
-      structureVersionRef.current++;
+      setStructureVersion(v => v + 1);
       
       // Sync to Drive if authenticated
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeNotebook?.driveFolderId) {
@@ -1810,7 +1886,7 @@
       setShouldFocusTitle(true); // Focus main title
       showNotification('Page created', 'success');
       // Trigger structure sync
-      structureVersionRef.current++;
+      setStructureVersion(v => v + 1);
       
       // Sync to Drive if authenticated
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
@@ -2155,10 +2231,10 @@
                         if (pg.id === id) {
                             pg.name = newName;
                             if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-                                // For block pages: rename the Google Doc
-                                if (pg.driveDocId) {
-                                    GoogleAPI.renameDriveItem(pg.driveDocId, newName).catch(err => {
-                                        console.error('Error updating page Google Doc:', err);
+                                // For block pages: rename the JSON file
+                                if (pg.driveFileId) {
+                                    GoogleAPI.renameDriveItem(pg.driveFileId, GoogleAPI.sanitizeFileName(newName) + '.json').catch(err => {
+                                        console.error('Error updating page file:', err);
                                     });
                                 }
                                 // For Google pages: rename the shortcut (not the original file)
@@ -2175,7 +2251,7 @@
             return next;
         });
         // Trigger structure sync for rename
-        structureVersionRef.current++;
+        setStructureVersion(v => v + 1);
     }
 
     const initiateDelete = (type, id) => setItemToDelete({ type, id });
@@ -2215,8 +2291,8 @@
                      for (let tab of nb.tabs) {
                          if (tab.id !== activeTabId) continue;
                          const page = tab.pages.find(p => p.id === id);
-                         // For block pages: delete the Google Doc
-                         if (page?.driveDocId) driveItemsToDelete.push(page.driveDocId);
+                         // For block pages: delete the JSON file
+                         if (page?.driveFileId) driveItemsToDelete.push(page.driveFileId);
                          // For Google pages: delete only the shortcut (not the original file)
                          if (page?.driveShortcutId) driveItemsToDelete.push(page.driveShortcutId);
                          const idx = tab.pages.findIndex(p => p.id === id);
@@ -2253,7 +2329,7 @@
         if (selectedBlockId === id) setSelectedBlockId(null);
         showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted`, 'success');
         // Trigger structure sync for deletion
-        structureVersionRef.current++;
+        setStructureVersion(v => v + 1);
     }
 
     const confirmDelete = () => {
