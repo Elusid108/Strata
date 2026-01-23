@@ -1,7 +1,235 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.0.0";
+  const APP_VERSION = "2.3.0";
+
+  // --- Offline Viewer HTML Generator ---
+  const generateOfflineViewerHtml = () => {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strata Notebooks - Offline Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+        .container { display: flex; height: 100vh; }
+        .sidebar { width: 280px; background: #1f2937; color: white; overflow-y: auto; flex-shrink: 0; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #374151; font-weight: bold; font-size: 18px; }
+        .notebook { margin: 8px; }
+        .notebook-header { padding: 8px 12px; background: #374151; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .notebook-header:hover { background: #4b5563; }
+        .notebook-header.active { background: #3b82f6; }
+        .tab { margin-left: 16px; margin-top: 4px; }
+        .tab-header { padding: 6px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+        .tab-header:hover { background: #374151; }
+        .tab-header.active { background: #4b5563; }
+        .page { margin-left: 32px; }
+        .page-item { padding: 4px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9ca3af; }
+        .page-item:hover { background: #374151; color: white; }
+        .page-item.active { background: #3b82f6; color: white; }
+        .main { flex: 1; overflow-y: auto; background: white; }
+        .page-content { max-width: 800px; margin: 0 auto; padding: 40px; }
+        .page-title { font-size: 32px; font-weight: bold; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+        .block { margin-bottom: 8px; line-height: 1.6; }
+        .block-h1 { font-size: 28px; font-weight: bold; margin-top: 24px; margin-bottom: 12px; }
+        .block-h2 { font-size: 24px; font-weight: bold; margin-top: 20px; margin-bottom: 10px; }
+        .block-h3 { font-size: 20px; font-weight: bold; margin-top: 16px; margin-bottom: 8px; }
+        .block-h4 { font-size: 16px; font-weight: bold; margin-top: 12px; margin-bottom: 6px; }
+        .block-ul, .block-ol { padding-left: 24px; }
+        .block-todo { display: flex; align-items: center; gap: 8px; }
+        .block-todo input { width: 18px; height: 18px; }
+        .block-divider { border-top: 1px solid #e5e7eb; margin: 16px 0; }
+        .block-image img { max-width: 100%; border-radius: 8px; }
+        .block-link a { color: #3b82f6; text-decoration: none; }
+        .block-link a:hover { text-decoration: underline; }
+        .block-video iframe { width: 100%; aspect-ratio: 16/9; border: none; border-radius: 8px; }
+        .google-link { padding: 16px; background: #f3f4f6; border-radius: 8px; margin: 8px 0; }
+        .google-link a { color: #3b82f6; font-weight: 500; }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .error { text-align: center; padding: 40px; color: #dc2626; }
+        .empty { text-align: center; padding: 60px; color: #9ca3af; }
+        @media (max-width: 768px) {
+            .sidebar { width: 100%; position: fixed; bottom: 0; height: auto; max-height: 50vh; z-index: 100; }
+            .main { margin-bottom: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">📓 Strata Notebooks</div>
+            <div id="nav"></div>
+        </div>
+        <div class="main">
+            <div id="content" class="loading">Loading...</div>
+        </div>
+    </div>
+    <script>
+        let manifest = null;
+        let currentNotebook = null;
+        let currentTab = null;
+        let currentPage = null;
+
+        async function loadManifest() {
+            try {
+                const response = await fetch('manifest.json');
+                if (!response.ok) throw new Error('Could not load manifest.json');
+                manifest = await response.json();
+                renderNav();
+                if (manifest.notebooks.length > 0) {
+                    selectNotebook(manifest.notebooks[0]);
+                } else {
+                    document.getElementById('content').innerHTML = '<div class="empty">No notebooks found</div>';
+                }
+            } catch (e) {
+                document.getElementById('content').innerHTML = '<div class="error">Error: ' + e.message + '<br><br>Make sure manifest.json is in the same folder as index.html</div>';
+            }
+        }
+
+        function renderNav() {
+            const nav = document.getElementById('nav');
+            nav.innerHTML = manifest.notebooks.map(nb => \`
+                <div class="notebook">
+                    <div class="notebook-header" onclick="selectNotebook(manifest.notebooks.find(n => n.id === '\${nb.id}'))" id="nb-\${nb.id}">
+                        <span>\${nb.icon || '📓'}</span>
+                        <span>\${nb.name}</span>
+                    </div>
+                    <div class="tabs" id="tabs-\${nb.id}" style="display: none;">
+                        \${nb.tabs.map(tab => \`
+                            <div class="tab">
+                                <div class="tab-header" onclick="selectTab(manifest.notebooks.find(n => n.id === '\${nb.id}'), '\${tab.id}')" id="tab-\${tab.id}">
+                                    <span>\${tab.icon || '📋'}</span>
+                                    <span>\${tab.name}</span>
+                                </div>
+                                <div class="pages" id="pages-\${tab.id}" style="display: none;">
+                                    \${tab.pages.map(page => \`
+                                        <div class="page">
+                                            <div class="page-item" onclick="selectPage('\${nb.id}', '\${tab.id}', '\${page.id}')" id="page-\${page.id}">
+                                                <span>\${page.icon || '📄'}</span>
+                                                <span>\${page.name}</span>
+                                            </div>
+                                        </div>
+                                    \`).join('')}
+                                </div>
+                            </div>
+                        \`).join('')}
+                    </div>
+                </div>
+            \`).join('');
+        }
+
+        function selectNotebook(nb) {
+            document.querySelectorAll('.notebook-header').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tabs').forEach(el => el.style.display = 'none');
+            document.getElementById('nb-' + nb.id).classList.add('active');
+            document.getElementById('tabs-' + nb.id).style.display = 'block';
+            currentNotebook = nb;
+            if (nb.tabs.length > 0) selectTab(nb, nb.tabs[0].id);
+        }
+
+        function selectTab(nb, tabId) {
+            const tab = nb.tabs.find(t => t.id === tabId);
+            document.querySelectorAll('.tab-header').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.pages').forEach(el => el.style.display = 'none');
+            document.getElementById('tab-' + tabId).classList.add('active');
+            document.getElementById('pages-' + tabId).style.display = 'block';
+            currentTab = tab;
+            if (tab.pages.length > 0) selectPage(nb.id, tabId, tab.pages[0].id);
+        }
+
+        async function selectPage(nbId, tabId, pageId) {
+            document.querySelectorAll('.page-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('page-' + pageId).classList.add('active');
+            
+            const nb = manifest.notebooks.find(n => n.id === nbId);
+            const tab = nb.tabs.find(t => t.id === tabId);
+            const page = tab.pages.find(p => p.id === pageId);
+            currentPage = page;
+
+            if (page.type && page.type !== 'block') {
+                // Google Doc/Sheet/Slides or external link
+                const link = page.webViewLink || page.embedUrl || '#';
+                document.getElementById('content').innerHTML = \`
+                    <div class="page-content">
+                        <h1 class="page-title"><span>\${page.icon || '📄'}</span> \${page.name}</h1>
+                        <div class="google-link">
+                            <p>This is a linked Google file.</p>
+                            <p><a href="\${link}" target="_blank">Open in Google Drive →</a></p>
+                        </div>
+                    </div>
+                \`;
+                return;
+            }
+
+            // Load block page content
+            try {
+                const filePath = nb.folder + '/' + tab.folder + '/' + page.file;
+                const response = await fetch(filePath);
+                if (!response.ok) throw new Error('Could not load page');
+                const pageData = await response.json();
+                renderPage(page, pageData);
+            } catch (e) {
+                document.getElementById('content').innerHTML = '<div class="error">Could not load page: ' + e.message + '</div>';
+            }
+        }
+
+        function renderPage(pageMeta, pageData) {
+            const content = pageData.content || pageData.rows || [];
+            let html = '<div class="page-content">';
+            html += '<h1 class="page-title"><span>' + (pageMeta.icon || '📄') + '</span> ' + pageMeta.name + '</h1>';
+            
+            function renderBlocks(rows) {
+                let blocksHtml = '';
+                for (const row of rows) {
+                    if (!row.columns) continue;
+                    for (const col of row.columns) {
+                        if (!col.blocks) continue;
+                        for (const block of col.blocks) {
+                            blocksHtml += renderBlock(block);
+                        }
+                    }
+                }
+                return blocksHtml;
+            }
+
+            function renderBlock(block) {
+                const c = block.content || '';
+                switch (block.type) {
+                    case 'h1': return '<div class="block block-h1">' + c + '</div>';
+                    case 'h2': return '<div class="block block-h2">' + c + '</div>';
+                    case 'h3': return '<div class="block block-h3">' + c + '</div>';
+                    case 'h4': return '<div class="block block-h4">' + c + '</div>';
+                    case 'ul': return '<ul class="block block-ul"><li>' + c + '</li></ul>';
+                    case 'ol': return '<ol class="block block-ol"><li>' + c + '</li></ol>';
+                    case 'todo': return '<div class="block block-todo"><input type="checkbox" ' + (block.checked ? 'checked' : '') + ' disabled> <span>' + c + '</span></div>';
+                    case 'divider': return '<div class="block-divider"></div>';
+                    case 'image': return block.url ? '<div class="block block-image"><img src="' + block.url + '" alt=""></div>' : '';
+                    case 'video': return block.url ? '<div class="block block-video"><iframe src="https://www.youtube.com/embed/' + getYouTubeId(block.url) + '" allowfullscreen></iframe></div>' : '';
+                    case 'link': return '<div class="block block-link"><a href="' + (block.url || '#') + '" target="_blank">' + (c || block.url || 'Link') + '</a></div>';
+                    default: return c ? '<div class="block">' + c + '</div>' : '';
+                }
+            }
+
+            function getYouTubeId(url) {
+                const match = url.match(/(?:youtu\\.be\\/|youtube\\.com\\/(?:embed\\/|v\\/|watch\\?v=|watch\\?.+&v=))([^#&?]*)/);
+                return match ? match[1] : '';
+            }
+
+            if (Array.isArray(content)) {
+                html += renderBlocks(content);
+            }
+            html += '</div>';
+            document.getElementById('content').innerHTML = html;
+        }
+
+        // Start
+        loadManifest();
+    <\/script>
+</body>
+</html>`;
+  };
 
   // --- Internal Icon Components ---
   const IconBase = ({ children, size = 24, className = "" }) => (
@@ -663,6 +891,17 @@
     const [isLoadingAuth, setIsLoadingAuth] = useState(true);
     const [userEmail, setUserEmail] = useState(null);
     const [userName, setUserName] = useState(null);
+    
+    // Drive sync state
+    const [driveRootFolderId, setDriveRootFolderId] = useState(null);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [lastSyncTime, setLastSyncTime] = useState(null);
+    
+    // Sync lock refs to prevent concurrent operations
+    const syncLockRef = useRef(false);
+    const pendingSyncRef = useRef(false);
+    const structureVersionRef = useRef(0);
+    const lastContentSyncRef = useRef(Date.now());
 
     // Initialize Google APIs and check auth status
     useEffect(() => {
@@ -677,13 +916,14 @@
                 await GoogleAPI.loadGapi();
                 await GoogleAPI.initGoogleAuth();
                 
-                const authenticated = await GoogleAPI.checkAuthStatus();
-                setIsAuthenticated(authenticated);
-                
-                if (authenticated) {
-                    const userInfo = await GoogleAPI.getUserInfo();
+                // checkAuthStatus now returns userInfo or null (restores session from storage)
+                const userInfo = await GoogleAPI.checkAuthStatus();
+                if (userInfo) {
+                    setIsAuthenticated(true);
                     setUserEmail(userInfo.email);
                     setUserName(userInfo.name || userInfo.given_name || userInfo.email);
+                } else {
+                    setIsAuthenticated(false);
                 }
             } catch (error) {
                 console.error('Error initializing Google auth:', error);
@@ -958,71 +1198,217 @@
         }
     }, [editingTabId]);
 
-    // Sync Notebook/Tab structure to Drive folders
+    // Initialize Drive root folder and sync token
     useEffect(() => {
         if (!isAuthenticated || isLoadingAuth || typeof GoogleAPI === 'undefined') return;
 
-        const syncFolders = async () => {
+        const initDriveSync = async () => {
             try {
-                // Ensure root folder exists
+                setIsSyncing(true);
+                // Ensure root folder exists and save its ID
                 const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
+                setDriveRootFolderId(rootFolderId);
+                setLastSyncTime(Date.now());
+            } catch (error) {
+                console.error('Error initializing Drive sync:', error);
+            } finally {
+                setIsSyncing(false);
+            }
+        };
 
-                // Sync each notebook
+        initDriveSync();
+    }, [isAuthenticated, isLoadingAuth]);
+
+    // Sync folder STRUCTURE to Drive (notebooks, tabs as folders; page files created but not updated)
+    // This only runs when structural changes occur (add/delete/rename notebooks/tabs/pages)
+    useEffect(() => {
+        if (!isAuthenticated || isLoadingAuth || typeof GoogleAPI === 'undefined' || !driveRootFolderId) return;
+
+        const syncStructure = async () => {
+            // Sync lock - prevent concurrent operations
+            if (syncLockRef.current) {
+                pendingSyncRef.current = true;
+                return;
+            }
+            syncLockRef.current = true;
+            
+            try {
+                setIsSyncing(true);
+                const driveIdUpdates = {}; // Only track drive IDs, not content
+
+                // Sync each notebook (create folders only if missing)
                 for (const notebook of data.notebooks) {
                     if (!notebook.driveFolderId) {
-                        // Create folder for notebook
                         try {
-                            const folder = await GoogleAPI.createDriveFolder(notebook.name, rootFolderId);
-                            // Update notebook with driveFolderId
-                            setData(prev => ({
-                                ...prev,
-                                notebooks: prev.notebooks.map(nb =>
-                                    nb.id === notebook.id ? { ...nb, driveFolderId: folder.id } : nb
-                                )
-                            }));
+                            const folderId = await GoogleAPI.getOrCreateFolder(notebook.name, driveRootFolderId);
+                            driveIdUpdates[notebook.id] = { driveFolderId: folderId };
                         } catch (error) {
                             console.error(`Error creating folder for notebook ${notebook.name}:`, error);
                         }
-                    } else {
-                        // Check if name changed and update folder
-                        // (This will be handled by renameItem, but we can verify here)
                     }
 
+                    const notebookFolderId = notebook.driveFolderId || driveIdUpdates[notebook.id]?.driveFolderId;
+                    if (!notebookFolderId) continue;
+
                     // Sync tabs within this notebook
-                    if (notebook.driveFolderId) {
-                        for (const tab of notebook.tabs) {
-                            if (!tab.driveFolderId) {
-                                // Create folder for tab
+                    for (const tab of notebook.tabs) {
+                        if (!tab.driveFolderId) {
+                            try {
+                                const folderId = await GoogleAPI.getOrCreateFolder(tab.name, notebookFolderId);
+                                if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
+                                if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
+                                driveIdUpdates[notebook.id].tabs[tab.id] = { driveFolderId: folderId };
+                            } catch (error) {
+                                console.error(`Error creating folder for tab ${tab.name}:`, error);
+                            }
+                        }
+
+                        const tabFolderId = tab.driveFolderId || driveIdUpdates[notebook.id]?.tabs?.[tab.id]?.driveFolderId;
+                        if (!tabFolderId) continue;
+
+                        // Create page files (but don't update content here - that's content sync)
+                        for (const page of tab.pages) {
+                            const pageType = page.type || 'block';
+                            const isGooglePage = ['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType);
+                            
+                            // For block pages: create file only if it doesn't exist
+                            if (!isGooglePage && !page.driveFileId) {
                                 try {
-                                    const folder = await GoogleAPI.createDriveFolder(tab.name, notebook.driveFolderId);
-                                    // Update tab with driveFolderId
-                                    setData(prev => ({
-                                        ...prev,
-                                        notebooks: prev.notebooks.map(nb =>
-                                            nb.id === notebook.id ? {
-                                                ...nb,
-                                                tabs: nb.tabs.map(t =>
-                                                    t.id === tab.id ? { ...t, driveFolderId: folder.id } : t
-                                                )
-                                            } : nb
-                                        )
-                                    }));
+                                    const fileId = await GoogleAPI.syncPageToDrive(page, tabFolderId);
+                                    if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
+                                    if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
+                                    if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
+                                    if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
+                                    driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { driveFileId: fileId };
                                 } catch (error) {
-                                    console.error(`Error creating folder for tab ${tab.name}:`, error);
+                                    console.error(`Error creating file for page ${page.name}:`, error);
+                                }
+                            }
+                            
+                            // For Google pages: create shortcut if missing
+                            if (isGooglePage && page.driveFileId && !page.driveShortcutId) {
+                                try {
+                                    const shortcut = await GoogleAPI.createDriveShortcut(page.name, page.driveFileId, tabFolderId);
+                                    if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
+                                    if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
+                                    if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
+                                    if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
+                                    driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { 
+                                        ...(driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] || {}),
+                                        driveShortcutId: shortcut.id 
+                                    };
+                                } catch (error) {
+                                    console.error(`Error creating shortcut for page ${page.name}:`, error);
                                 }
                             }
                         }
                     }
                 }
+
+                // Apply drive ID updates without touching content (functional update)
+                if (Object.keys(driveIdUpdates).length > 0) {
+                    setData(prev => {
+                        const next = { ...prev, notebooks: prev.notebooks.map(notebook => {
+                            const nbUpdate = driveIdUpdates[notebook.id];
+                            if (!nbUpdate) return notebook;
+                            
+                            return {
+                                ...notebook,
+                                driveFolderId: nbUpdate.driveFolderId || notebook.driveFolderId,
+                                tabs: notebook.tabs.map(tab => {
+                                    const tabUpdate = nbUpdate.tabs?.[tab.id];
+                                    if (!tabUpdate) return tab;
+                                    
+                                    return {
+                                        ...tab,
+                                        driveFolderId: tabUpdate.driveFolderId || tab.driveFolderId,
+                                        pages: tab.pages.map(page => {
+                                            const pageUpdate = tabUpdate.pages?.[page.id];
+                                            if (!pageUpdate) return page;
+                                            
+                                            return {
+                                                ...page,
+                                                driveFileId: pageUpdate.driveFileId || page.driveFileId,
+                                                driveShortcutId: pageUpdate.driveShortcutId || page.driveShortcutId
+                                            };
+                                        })
+                                    };
+                                })
+                            };
+                        })};
+                        return next;
+                    });
+                }
+                
+                // Update manifest.json and index.html (only on structure sync)
+                try {
+                    await GoogleAPI.updateManifest(data, driveRootFolderId, APP_VERSION);
+                    await GoogleAPI.uploadIndexHtml(generateOfflineViewerHtml(), driveRootFolderId);
+                } catch (error) {
+                    console.error('Error updating manifest/index.html:', error);
+                }
+                
+                setLastSyncTime(Date.now());
             } catch (error) {
-                console.error('Error syncing folders:', error);
+                console.error('Error syncing structure:', error);
+            } finally {
+                setIsSyncing(false);
+                syncLockRef.current = false;
+                
+                // If a sync was requested while we were syncing, run it now
+                if (pendingSyncRef.current) {
+                    pendingSyncRef.current = false;
+                    setTimeout(syncStructure, 1000);
+                }
             }
         };
 
-        // Debounce folder sync to avoid excessive API calls
-        const syncTimeout = setTimeout(syncFolders, 1000);
+        // Longer debounce for structure sync (5 seconds)
+        const syncTimeout = setTimeout(syncStructure, 5000);
         return () => clearTimeout(syncTimeout);
-    }, [data.notebooks, isAuthenticated, isLoadingAuth]);
+    }, [structureVersionRef.current, isAuthenticated, isLoadingAuth, driveRootFolderId]);
+
+    // Content sync - update page content files after user stops editing (idle detection)
+    useEffect(() => {
+        if (!isAuthenticated || isLoadingAuth || typeof GoogleAPI === 'undefined' || !driveRootFolderId) return;
+        
+        const syncContent = async () => {
+            // Don't sync content if structure sync is running
+            if (syncLockRef.current) return;
+            
+            // Find pages that have driveFileId and need content update
+            for (const notebook of data.notebooks) {
+                for (const tab of notebook.tabs) {
+                    const tabFolderId = tab.driveFolderId;
+                    if (!tabFolderId) continue;
+                    
+                    for (const page of tab.pages) {
+                        const pageType = page.type || 'block';
+                        const isGooglePage = ['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType);
+                        
+                        // Only sync block pages that already have a driveFileId
+                        if (!isGooglePage && page.driveFileId) {
+                            try {
+                                await GoogleAPI.syncPageToDrive(page, tabFolderId);
+                            } catch (error) {
+                                console.error(`Error updating page content ${page.name}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+            lastContentSyncRef.current = Date.now();
+        };
+
+        // Content sync after 10 seconds of idle (longer debounce to avoid conflicts)
+        const contentSyncTimeout = setTimeout(syncContent, 10000);
+        return () => clearTimeout(contentSyncTimeout);
+    }, [data.notebooks, isAuthenticated, isLoadingAuth, driveRootFolderId]);
+
+    // NOTE: Polling for Drive changes has been removed.
+    // The notebook is now the "master" - it only PUSHES changes to Drive.
+    // This eliminates the "bounce" effect where changes would sync back and forth.
+    // Multi-user collaboration can be added later as a separate feature.
 
     // Detect tab bar overflow for fish-eye effect
     // Uses calculated full-width requirement to avoid feedback loop
@@ -1287,7 +1673,7 @@
       };
     };
 
-    const addNotebook = () => {
+    const addNotebook = async () => {
       saveToHistory();
       const newPage = createDefaultPage();
       const newTab = { id: generateId(), name: 'New Tab', icon: '📋', color: COLORS[0].name, pages: [newPage], activePageId: newPage.id };
@@ -1304,9 +1690,43 @@
       // Set creation flow to enable Enter key navigation: notebook → tab → page title
       setCreationFlow({ notebookId: newNb.id, tabId: newTab.id, pageId: newPage.id });
       showNotification('Notebook created', 'success');
+      // Trigger structure sync
+      structureVersionRef.current++;
+      
+      // Sync to Drive if authenticated
+      if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
+          try {
+              const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
+              const notebookFolderId = await GoogleAPI.syncNotebookToDrive(newNb, rootFolderId);
+              const tabFolderId = await GoogleAPI.syncTabToDrive(newTab, notebookFolderId);
+              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, tabFolderId);
+              
+              // Update local data with Drive IDs
+              setData(prev => ({
+                  ...prev,
+                  notebooks: prev.notebooks.map(nb => 
+                      nb.id === newNb.id ? {
+                          ...nb,
+                          driveFolderId: notebookFolderId,
+                          tabs: nb.tabs.map(tab => 
+                              tab.id === newTab.id ? {
+                                  ...tab,
+                                  driveFolderId: tabFolderId,
+                                  pages: tab.pages.map(page => 
+                                      page.id === newPage.id ? { ...page, driveFileId: pageFileId } : page
+                                  )
+                              } : tab
+                          )
+                      } : nb
+                  )
+              }));
+          } catch (error) {
+              console.error('Error syncing notebook to Drive:', error);
+          }
+      }
     };
 
-    const addTab = () => {
+    const addTab = async () => {
       if (!activeNotebookId) return;
       saveToHistory();
       const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
@@ -1326,12 +1746,46 @@
       setEditingTabId(newTab.id);
       setEditingNotebookId(null);
       showNotification('Section created', 'success');
+      // Trigger structure sync
+      structureVersionRef.current++;
+      
+      // Sync to Drive if authenticated
+      if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeNotebook?.driveFolderId) {
+          try {
+              const tabFolderId = await GoogleAPI.syncTabToDrive(newTab, activeNotebook.driveFolderId);
+              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, tabFolderId);
+              
+              // Update local data with Drive IDs
+              setData(prev => ({
+                  ...prev,
+                  notebooks: prev.notebooks.map(nb => 
+                      nb.id === activeNotebookId ? {
+                          ...nb,
+                          tabs: nb.tabs.map(tab => 
+                              tab.id === newTab.id ? {
+                                  ...tab,
+                                  driveFolderId: tabFolderId,
+                                  pages: tab.pages.map(page => 
+                                      page.id === newPage.id ? { ...page, driveFileId: pageFileId } : page
+                                  )
+                              } : tab
+                          )
+                      } : nb
+                  )
+              }));
+          } catch (error) {
+              console.error('Error syncing tab to Drive:', error);
+          }
+      }
     };
 
-    const addPage = () => {
+    const addPage = async () => {
       if (!activeTabId) return;
       saveToHistory();
       const newPage = createDefaultPage();
+      const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+      const activeTab = activeNotebook?.tabs.find(t => t.id === activeTabId);
+      
       const newData = {
         ...data,
         notebooks: data.notebooks.map(nb => 
@@ -1355,6 +1809,35 @@
       setEditingNotebookId(null);
       setShouldFocusTitle(true); // Focus main title
       showNotification('Page created', 'success');
+      // Trigger structure sync
+      structureVersionRef.current++;
+      
+      // Sync to Drive if authenticated
+      if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
+          try {
+              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+              
+              // Update local data with Drive ID
+              setData(prev => ({
+                  ...prev,
+                  notebooks: prev.notebooks.map(nb => 
+                      nb.id === activeNotebookId ? {
+                          ...nb,
+                          tabs: nb.tabs.map(tab => 
+                              tab.id === activeTabId ? {
+                                  ...tab,
+                                  pages: tab.pages.map(page => 
+                                      page.id === newPage.id ? { ...page, driveFileId: pageFileId } : page
+                                  )
+                              } : tab
+                          )
+                      } : nb
+                  )
+              }));
+          } catch (error) {
+              console.error('Error syncing page to Drive:', error);
+          }
+      }
     };
 
     // Add a page from Google Drive Picker
@@ -1653,7 +2136,7 @@
                     nb.name = newName;
                     // Update Drive folder name if authenticated
                     if (isAuthenticated && typeof GoogleAPI !== 'undefined' && nb.driveFolderId) {
-                        GoogleAPI.updateDriveFolder(nb.driveFolderId, newName).catch(err => {
+                        GoogleAPI.renameDriveItem(nb.driveFolderId, newName).catch(err => {
                             console.error('Error updating notebook folder:', err);
                         });
                     }
@@ -1663,18 +2146,36 @@
                         tab.name = newName;
                         // Update Drive folder name if authenticated
                         if (isAuthenticated && typeof GoogleAPI !== 'undefined' && tab.driveFolderId) {
-                            GoogleAPI.updateDriveFolder(tab.driveFolderId, newName).catch(err => {
+                            GoogleAPI.renameDriveItem(tab.driveFolderId, newName).catch(err => {
                                 console.error('Error updating tab folder:', err);
                             });
                         }
                     }
                     tab.pages.forEach(pg => {
-                        if (pg.id === id) pg.name = newName;
+                        if (pg.id === id) {
+                            pg.name = newName;
+                            if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
+                                // For block pages: rename the Google Doc
+                                if (pg.driveDocId) {
+                                    GoogleAPI.renameDriveItem(pg.driveDocId, newName).catch(err => {
+                                        console.error('Error updating page Google Doc:', err);
+                                    });
+                                }
+                                // For Google pages: rename the shortcut (not the original file)
+                                if (pg.driveShortcutId) {
+                                    GoogleAPI.renameDriveItem(pg.driveShortcutId, newName).catch(err => {
+                                        console.error('Error updating page shortcut:', err);
+                                    });
+                                }
+                            }
+                        }
                     });
                 });
             });
             return next;
         });
+        // Trigger structure sync for rename
+        structureVersionRef.current++;
     }
 
     const initiateDelete = (type, id) => setItemToDelete({ type, id });
@@ -1683,11 +2184,11 @@
         saveToHistory();
         const newData = JSON.parse(JSON.stringify(data));
         let nextId = null;
-        let driveFolderIdToDelete = null;
+        let driveItemsToDelete = []; // Can be multiple items for pages
 
         if(type === 'notebook') {
              const notebook = newData.notebooks.find(n => n.id === id);
-             driveFolderIdToDelete = notebook?.driveFolderId;
+             if (notebook?.driveFolderId) driveItemsToDelete.push(notebook.driveFolderId);
              const idx = newData.notebooks.findIndex(n => n.id === id);
              if (activeNotebookId === id) {
                  if (idx < newData.notebooks.length - 1) nextId = newData.notebooks[idx + 1].id;
@@ -1700,7 +2201,7 @@
                  if (nb.id !== activeNotebookId) continue;
                  if (type === 'tab') {
                      const tab = nb.tabs.find(t => t.id === id);
-                     driveFolderIdToDelete = tab?.driveFolderId;
+                     if (tab?.driveFolderId) driveItemsToDelete.push(tab.driveFolderId);
                      const idx = nb.tabs.findIndex(t => t.id === id);
                      if (activeTabId === id) {
                          if (idx < nb.tabs.length - 1) nextId = nb.tabs[idx + 1].id;
@@ -1713,6 +2214,11 @@
                  } else if (type === 'page') {
                      for (let tab of nb.tabs) {
                          if (tab.id !== activeTabId) continue;
+                         const page = tab.pages.find(p => p.id === id);
+                         // For block pages: delete the Google Doc
+                         if (page?.driveDocId) driveItemsToDelete.push(page.driveDocId);
+                         // For Google pages: delete only the shortcut (not the original file)
+                         if (page?.driveShortcutId) driveItemsToDelete.push(page.driveShortcutId);
                          const idx = tab.pages.findIndex(p => p.id === id);
                          if (activePageId === id) {
                              if (idx < tab.pages.length - 1) nextId = tab.pages[idx + 1].id;
@@ -1728,13 +2234,15 @@
              }
         }
         
-        // Delete Drive folder if authenticated
-        if (isAuthenticated && typeof GoogleAPI !== 'undefined' && driveFolderIdToDelete) {
-            try {
-                await GoogleAPI.deleteDriveFolder(driveFolderIdToDelete);
-            } catch (error) {
-                console.error('Error deleting Drive folder:', error);
-                // Continue with local delete even if Drive delete fails
+        // Delete Drive items (folders, docs, or shortcuts) if authenticated
+        if (isAuthenticated && typeof GoogleAPI !== 'undefined' && driveItemsToDelete.length > 0) {
+            for (const itemId of driveItemsToDelete) {
+                try {
+                    await GoogleAPI.deleteDriveItem(itemId);
+                } catch (error) {
+                    console.error('Error deleting Drive item:', error);
+                    // Continue with local delete even if Drive delete fails
+                }
             }
         }
         
@@ -1744,6 +2252,8 @@
         if (activeTabMenu && activeTabMenu.id === id) setActiveTabMenu(null);
         if (selectedBlockId === id) setSelectedBlockId(null);
         showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted`, 'success');
+        // Trigger structure sync for deletion
+        structureVersionRef.current++;
     }
 
     const confirmDelete = () => {
@@ -2137,25 +2647,37 @@
                               <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-700 rounded">
                                   <GoogleG size={14} />
                                   <span className="text-xs text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
+                                  {isSyncing && (
+                                      <span className="text-xs text-blue-400 animate-pulse" title="Syncing with Drive...">⟳</span>
+                                  )}
                               </div>
-                              <button onClick={handleSignOut} className="text-xs text-red-400 hover:text-red-300 w-full text-left px-1">
-                                  Sign Out
-                              </button>
+                              <div className="flex items-center justify-between text-xs px-1">
+                                  <button onClick={handleSignOut} className="text-red-400 hover:text-red-300">
+                                      Sign Out
+                                  </button>
+                                  <span className="text-gray-600">v{APP_VERSION}</span>
+                                  {lastSyncTime && (
+                                      <span className="text-green-500" title={`Last synced: ${new Date(lastSyncTime).toLocaleTimeString()}`}>
+                                          ✓ Synced
+                                      </span>
+                                  )}
+                              </div>
                           </div>
                       ) : (
-                          <button 
-                              onClick={handleSignIn} 
-                              className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-                              disabled={typeof GoogleAPI === 'undefined'}
-                          >
-                              <GoogleG size={14} />
-                              Sign in with Google
-                          </button>
+                          <div className="flex flex-col gap-1">
+                              <button 
+                                  onClick={handleSignIn} 
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                                  disabled={typeof GoogleAPI === 'undefined'}
+                              >
+                                  <GoogleG size={14} />
+                                  Sign in with Google
+                              </button>
+                              <span className="text-xs text-gray-600 text-center">v{APP_VERSION}</span>
+                          </div>
                       )}
                   </div>
               )}
-              
-              {!settings.condensedView && <span className="text-xs text-gray-600 text-center" title="App Version">v{APP_VERSION}</span>}
           </div>
         </div>
 

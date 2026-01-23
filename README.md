@@ -59,6 +59,11 @@ Strata supports **Google Drive** as the primary storage backend, with localStora
   - Root folder: `Strata Notebooks`
   - Each Notebook → Drive folder
   - Each Tab → Drive folder (nested under Notebook folder)
+  - Each Page → JSON file with content
+- **Portable Backup**: Download the entire `Strata Notebooks` folder as a ZIP
+  - Includes `index.html` offline viewer
+  - Open locally in any browser without internet
+  - `manifest.json` contains full structure metadata
 
 ### Setup Instructions
 
@@ -108,6 +113,9 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.3.0** - Portable backup with offline viewer, one-way sync (notebook as master)
+- **v2.2.0** - Two-way Drive sync, sync status UI improvements
+- **v2.1.0** - Drive folder mirroring, page content sync
 - **v2.0.0** - Google Drive integration, cloud sync, Drive file embedding
 - **v1.0.5** - Tab overflow detection fixes
 - **v1.0.4** - Tab condensing improvements, selected tab positioning
@@ -119,6 +127,6 @@ If not signed in, app uses `localStorage`:
 
 - [x] Google Drive API integration for cloud storage
 - [x] User authentication (Google Sign-In)
+- [x] Export/Import functionality (downloadable folder with offline viewer)
 - [ ] Collaborative editing
-- [ ] Export/Import functionality
 - [ ] Mobile-responsive improvements
