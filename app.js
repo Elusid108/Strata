@@ -644,11 +644,7 @@
     
     // Page type menu and import states
     const [showPageTypeMenu, setShowPageTypeMenu] = useState(false);
-    const [showGoogleImport, setShowGoogleImport] = useState(false);
-    const [googleImportType, setGoogleImportType] = useState('doc');
-    const [googleImportUrl, setGoogleImportUrl] = useState('');
     const [showUrlImport, setShowUrlImport] = useState(false);
-    const [urlImportType, setUrlImportType] = useState('web'); // 'web' or 'pdf'
     const [urlImportValue, setUrlImportValue] = useState('');
     const [favoritesExpanded, setFavoritesExpanded] = useState(false);
     const [showEditEmbed, setShowEditEmbed] = useState(false);
@@ -666,6 +662,7 @@
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoadingAuth, setIsLoadingAuth] = useState(true);
     const [userEmail, setUserEmail] = useState(null);
+    const [userName, setUserName] = useState(null);
 
     // Initialize Google APIs and check auth status
     useEffect(() => {
@@ -686,6 +683,7 @@
                 if (authenticated) {
                     const userInfo = await GoogleAPI.getUserInfo();
                     setUserEmail(userInfo.email);
+                    setUserName(userInfo.name || userInfo.given_name || userInfo.email);
                 }
             } catch (error) {
                 console.error('Error initializing Google auth:', error);
@@ -705,10 +703,9 @@
             const userInfo = await GoogleAPI.signIn();
             setIsAuthenticated(true);
             setUserEmail(userInfo.email);
+            setUserName(userInfo.name || userInfo.given_name || userInfo.email);
             showNotification('Signed in successfully', 'success');
-            
-            // Trigger data load from Drive
-            window.location.reload(); // Simple reload to trigger Drive load
+            // Data loading is handled automatically by useEffect when isAuthenticated changes
         } catch (error) {
             console.error('Sign in error:', error);
             showNotification('Sign in failed', 'error');
@@ -722,6 +719,7 @@
         GoogleAPI.signOut();
         setIsAuthenticated(false);
         setUserEmail(null);
+        setUserName(null);
         showNotification('Signed out', 'info');
         // Reload to reset to localStorage
         window.location.reload();
@@ -1359,45 +1357,59 @@
       showNotification('Page created', 'success');
     };
 
-    const handleGoogleImport = () => {
-      if (!activeTabId || !googleImportUrl) return;
+    // Add a page from Google Drive Picker
+    const addGooglePage = (file) => {
+      if (!activeTabId || !file) return;
       
-      // Extract document ID from URL
-      const match = googleImportUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      if (!match) {
-        showNotification('Invalid Google URL. Please paste a valid Docs, Sheets, or Slides URL.', 'error');
-        return;
+      // Determine type and icon based on MIME type
+      let icon, typeName, pageType;
+      const mimeType = file.mimeType;
+      
+      if (mimeType === 'application/vnd.google-apps.document') {
+        icon = '📄';
+        typeName = 'Doc';
+        pageType = 'doc';
+      } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        icon = '📊';
+        typeName = 'Sheet';
+        pageType = 'sheet';
+      } else if (mimeType === 'application/vnd.google-apps.presentation') {
+        icon = '📽️';
+        typeName = 'Slides';
+        pageType = 'slide';
+      } else if (mimeType === 'application/pdf') {
+        icon = '📑';
+        typeName = 'PDF';
+        pageType = 'pdf';
+      } else {
+        // Generic Drive file
+        icon = '📁';
+        typeName = 'File';
+        pageType = 'drive';
       }
       
-      const docId = match[1];
-      let embedUrl, icon, typeName;
-      
-      switch(googleImportType) {
-        case 'doc':
-          embedUrl = `https://docs.google.com/document/d/${docId}/edit`;
-          icon = '📄';
-          typeName = 'Doc';
-          break;
-        case 'sheet':
-          embedUrl = `https://docs.google.com/spreadsheets/d/${docId}/edit`;
-          icon = '📊';
-          typeName = 'Sheet';
-          break;
-        case 'slide':
-          embedUrl = `https://docs.google.com/presentation/d/${docId}/edit`;
-          icon = '📽️';
-          typeName = 'Slides';
-          break;
-        default:
-          return;
+      // Build embed URL based on type
+      let embedUrl;
+      if (pageType === 'doc') {
+        embedUrl = `https://docs.google.com/document/d/${file.id}/preview`;
+      } else if (pageType === 'sheet') {
+        embedUrl = `https://docs.google.com/spreadsheets/d/${file.id}/preview`;
+      } else if (pageType === 'slide') {
+        embedUrl = `https://docs.google.com/presentation/d/${file.id}/preview`;
+      } else {
+        // Generic Drive file preview
+        embedUrl = `https://drive.google.com/file/d/${file.id}/preview`;
       }
       
       saveToHistory();
       const newPage = {
         id: generateId(),
-        name: `Google ${typeName}`,
-        type: googleImportType, // 'doc', 'sheet', 'slide'
+        name: file.name || `Google ${typeName}`,
+        type: pageType,
         embedUrl,
+        driveFileId: file.id,
+        webViewLink: file.webViewLink || file.url,
+        mimeType: file.mimeType,
         icon,
         createdAt: Date.now()
       };
@@ -1421,10 +1433,7 @@
       setData(newData);
       saveToHistory(newData);
       setActivePageId(newPage.id);
-      setShowGoogleImport(false);
-      setGoogleImportUrl('');
-      setGoogleImportType('doc');
-      showNotification(`Google ${typeName} added`, 'success');
+      showNotification(`${file.name || 'Google ' + typeName} added`, 'success');
     };
 
     const handleUrlImport = () => {
@@ -1436,38 +1445,27 @@
         url = 'https://' + url;
       }
       
-      let embedUrl, icon, pageName, pageType;
+      let embedUrl;
       
-      if (urlImportType === 'web') {
-        embedUrl = url;
-        icon = '🌐';
-        pageName = 'Web Page';
-        pageType = 'web';
-      } else if (urlImportType === 'pdf') {
-        icon = '📑';
-        pageName = 'PDF Document';
-        pageType = 'pdf';
-        
-        // Check if it's a Google Drive sharing URL
-        const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
-        if (driveMatch) {
-          // Convert Google Drive sharing URL to preview embed
-          const fileId = driveMatch[1];
-          embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-        } else {
-          // Use Google's PDF viewer for direct PDF URLs
-          embedUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(url)}`;
-        }
+      // Check if it's a Google Drive sharing URL
+      const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (driveMatch) {
+        // Convert Google Drive sharing URL to preview embed
+        const fileId = driveMatch[1];
+        embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+      } else {
+        // Use Google's PDF viewer for direct PDF URLs
+        embedUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(url)}`;
       }
       
       saveToHistory();
       const newPage = {
         id: generateId(),
-        name: pageName,
-        type: pageType,
+        name: 'PDF Document',
+        type: 'pdf',
         embedUrl,
         originalUrl: url, // Store corrected URL for reference
-        icon,
+        icon: '📑',
         createdAt: Date.now()
       };
       
@@ -1492,7 +1490,7 @@
       setActivePageId(newPage.id);
       setShowUrlImport(false);
       setUrlImportValue('');
-      showNotification(`${pageName} added`, 'success');
+      showNotification('PDF Document added', 'success');
     };
 
     const openEditEmbed = () => {
@@ -2136,7 +2134,10 @@
                           <div className="text-xs text-gray-500 text-center">Loading...</div>
                       ) : isAuthenticated ? (
                           <div className="flex flex-col gap-1">
-                              <div className="text-xs text-gray-400 truncate" title={userEmail}>{userEmail}</div>
+                              <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-700 rounded">
+                                  <GoogleG size={14} />
+                                  <span className="text-xs text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
+                              </div>
                               <button onClick={handleSignOut} className="text-xs text-red-400 hover:text-red-300 w-full text-left px-1">
                                   Sign Out
                               </button>
@@ -2570,20 +2571,36 @@
                                           <span className="text-lg">📝</span> Block Page
                                       </button>
                                       <div className="border-t border-gray-100 my-1"></div>
-                                      <button onClick={() => { setGoogleImportType('doc'); setShowGoogleImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                      <button onClick={() => { 
+                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
+                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file));
+                                          setShowPageTypeMenu(false); 
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                          <GoogleG size={18} /> Google Drive
+                                      </button>
+                                      <button onClick={() => { 
+                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
+                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file), 'application/vnd.google-apps.document');
+                                          setShowPageTypeMenu(false); 
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
                                           <span className="text-lg">📄</span> Google Doc
                                       </button>
-                                      <button onClick={() => { setGoogleImportType('sheet'); setShowGoogleImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                      <button onClick={() => { 
+                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
+                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file), 'application/vnd.google-apps.spreadsheet');
+                                          setShowPageTypeMenu(false); 
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
                                           <span className="text-lg">📊</span> Google Sheet
                                       </button>
-                                      <button onClick={() => { setGoogleImportType('slide'); setShowGoogleImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                      <button onClick={() => { 
+                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
+                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file), 'application/vnd.google-apps.presentation');
+                                          setShowPageTypeMenu(false); 
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
                                           <span className="text-lg">📽️</span> Google Slides
                                       </button>
                                       <div className="border-t border-gray-100 my-1"></div>
-                                      <button onClick={() => { setUrlImportType('web'); setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
-                                          <span className="text-lg">🌐</span> Web Page
-                                      </button>
-                                      <button onClick={() => { setUrlImportType('pdf'); setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                      <button onClick={() => { setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
                                           <span className="text-lg">📑</span> PDF Document
                                       </button>
                                   </div>
@@ -2660,87 +2677,13 @@
 
           {notification && <div className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg z-[10000] animate-bounce-in">{notification.message}</div>}
 
-          {showGoogleImport && (
-              <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
-                      <div className="flex items-center justify-between mb-6">
-                          <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
-                              <GoogleG size={24} /> Add Google Workspace Page
-                          </h3>
-                          <button onClick={() => { setShowGoogleImport(false); setGoogleImportUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                              <X size={20} className="dark:text-white" />
-                          </button>
-                      </div>
-                      
-                      {/* Type Selection */}
-                      <div className="mb-4">
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Type</label>
-                          <div className="flex gap-2">
-                              {[
-                                  { value: 'doc', icon: '📄', label: 'Doc' },
-                                  { value: 'sheet', icon: '📊', label: 'Sheet' },
-                                  { value: 'slide', icon: '📽️', label: 'Slides' },
-                              ].map(opt => (
-                                  <button
-                                      key={opt.value}
-                                      onClick={() => setGoogleImportType(opt.value)}
-                                      className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 rounded-lg border-2 transition-all ${
-                                          googleImportType === opt.value 
-                                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30' 
-                                              : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                      }`}
-                                  >
-                                      <span className="text-xl">{opt.icon}</span>
-                                      <span className="font-medium dark:text-white">{opt.label}</span>
-                                  </button>
-                              ))}
-                          </div>
-                      </div>
-
-                      {/* URL Input */}
-                      <div className="mb-6">
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                              Google {googleImportType === 'doc' ? 'Docs' : googleImportType === 'sheet' ? 'Sheets' : 'Slides'} URL
-                          </label>
-                          <input 
-                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                              placeholder="https://docs.google.com/..."
-                              value={googleImportUrl}
-                              onChange={(e) => setGoogleImportUrl(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleGoogleImport(); }}
-                              autoFocus
-                          />
-                          <p className="text-xs text-gray-400 mt-2">
-                              Paste the full URL from your browser address bar. The document must be set to "Anyone with link can view".
-                          </p>
-                      </div>
-
-                      <div className="flex justify-end gap-3">
-                          <button 
-                              onClick={() => { setShowGoogleImport(false); setGoogleImportUrl(''); }}
-                              className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                          >
-                              Cancel
-                          </button>
-                          <button 
-                              onClick={handleGoogleImport}
-                              disabled={!googleImportUrl}
-                              className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                              Add Page
-                          </button>
-                      </div>
-                  </div>
-              </div>
-          )}
-
           {showUrlImport && (
               <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
                       <div className="flex items-center justify-between mb-6">
                           <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
-                              <span className="text-2xl">{urlImportType === 'web' ? '🌐' : '📑'}</span>
-                              Add {urlImportType === 'web' ? 'Web Page' : 'PDF Document'}
+                              <span className="text-2xl">📑</span>
+                              Add PDF Document
                           </h3>
                           <button onClick={() => { setShowUrlImport(false); setUrlImportValue(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                               <X size={20} className="dark:text-white" />
@@ -2749,20 +2692,18 @@
 
                       <div className="mb-6">
                           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                              {urlImportType === 'web' ? 'Website URL' : 'PDF URL'}
+                              PDF URL
                           </label>
                           <input 
                               className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                              placeholder={urlImportType === 'web' ? 'https://example.com' : 'https://example.com/document.pdf'}
+                              placeholder="https://example.com/document.pdf"
                               value={urlImportValue}
                               onChange={(e) => setUrlImportValue(e.target.value)}
                               onKeyDown={(e) => { if (e.key === 'Enter') handleUrlImport(); }}
                               autoFocus
                           />
                           <p className="text-xs text-gray-400 mt-2">
-                              {urlImportType === 'web' 
-                                  ? 'The website will be embedded as a live view. Some sites may block embedding.' 
-                                  : 'Enter a direct link to a PDF file. The PDF will be displayed using Google\'s PDF viewer.'}
+                              Enter a direct link to a PDF file or a Google Drive sharing link. The PDF will be displayed using Google's PDF viewer.
                           </p>
                       </div>
 

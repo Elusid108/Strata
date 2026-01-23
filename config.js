@@ -3,6 +3,8 @@ const GOOGLE_CONFIG = {
     API_KEY: 'AIzaSyAx8q653Nckfh-FeLtlQp00GYE8mElEMbM',
     SCOPES: [
         'https://www.googleapis.com/auth/drive.appdata',
-        'https://www.googleapis.com/auth/drive.file'
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
     ]
 };

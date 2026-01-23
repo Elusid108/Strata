@@ -36,6 +36,10 @@ const loadGapi = () => {
     });
 };
 
+// Store pending sign-in promise resolver
+let signInResolver = null;
+let signInRejecter = null;
+
 // Initialize Google Identity Services
 const initGoogleAuth = () => {
     return new Promise((resolve, reject) => {
@@ -49,16 +53,42 @@ const initGoogleAuth = () => {
             return;
         }
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:initTokenClient',message:'Initializing token client',data:{requestedScopes:GOOGLE_CONFIG.SCOPES,scopeString:GOOGLE_CONFIG.SCOPES.join(' ')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: GOOGLE_CONFIG.CLIENT_ID,
             scope: GOOGLE_CONFIG.SCOPES.join(' '),
-            callback: (response) => {
+            callback: async (response) => {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:callback:entry',message:'OAuth callback fired',data:{hasError:!!response.error,hasToken:!!response.access_token,tokenLength:response.access_token?.length||0,scopes:response.scope},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 if (response.error) {
                     console.error('OAuth error:', response.error);
+                    if (signInRejecter) {
+                        signInRejecter(new Error(response.error));
+                        signInResolver = null;
+                        signInRejecter = null;
+                    }
                     return;
                 }
                 accessToken = response.access_token;
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:callback:tokenSet',message:'Token assigned to accessToken',data:{tokenPrefix:accessToken?.substring(0,10),tokenLength:accessToken?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 gapi.client.setToken({ access_token: accessToken });
+                
+                // Resolve the pending sign-in promise
+                if (signInResolver) {
+                    try {
+                        const userInfo = await getUserInfo();
+                        signInResolver(userInfo);
+                    } catch (error) {
+                        if (signInRejecter) signInRejecter(error);
+                    }
+                    signInResolver = null;
+                    signInRejecter = null;
+                }
             },
         });
 
@@ -69,28 +99,20 @@ const initGoogleAuth = () => {
 
 // Sign in user
 const signIn = () => {
-    return new Promise((resolve, reject) => {
-        if (!tokenClient) {
-            initGoogleAuth().then(() => {
-                tokenClient.requestAccessToken({ prompt: 'consent' });
-                // Token will be set in callback
-                setTimeout(() => {
-                    if (accessToken) {
-                        getUserInfo().then(resolve).catch(reject);
-                    } else {
-                        reject(new Error('Failed to get access token'));
-                    }
-                }, 1000);
-            }).catch(reject);
-        } else {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!tokenClient) {
+                await initGoogleAuth();
+            }
+            
+            // Store resolvers for the callback to use
+            signInResolver = resolve;
+            signInRejecter = reject;
+            
+            // Request the access token - this opens the popup
             tokenClient.requestAccessToken({ prompt: 'consent' });
-            setTimeout(() => {
-                if (accessToken) {
-                    getUserInfo().then(resolve).catch(reject);
-                } else {
-                    reject(new Error('Failed to get access token'));
-                }
-            }, 1000);
+        } catch (error) {
+            reject(error);
         }
     });
 };
@@ -137,15 +159,36 @@ const checkAuthStatus = async () => {
     }
 };
 
-// Get user info
+// Get user info - using fetch directly to avoid API key being added by gapi.client
 const getUserInfo = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:getUserInfo:entry',message:'getUserInfo called',data:{hasAccessToken:!!accessToken,tokenPrefix:accessToken?.substring(0,10),tokenLength:accessToken?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     try {
-        const response = await gapi.client.request({
-            path: 'https://www.googleapis.com/oauth2/v2/userinfo',
+        // Use fetch directly with Authorization header (no API key)
+        const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
         });
-        userEmail = response.result.email;
-        return response.result;
+        
+        if (!response.ok) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:getUserInfo:error',message:'fetch failed',data:{status:response.status,statusText:response.statusText},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            throw new Error(`Failed to get user info: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:getUserInfo:success',message:'user info retrieved',data:{hasEmail:!!result.email,hasName:!!result.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        userEmail = result.email;
+        return result;
     } catch (error) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:getUserInfo:catch',message:'error caught',data:{errorMsg:error.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         console.error('Error getting user info:', error);
         throw error;
     }
@@ -441,7 +484,8 @@ const getOrCreateRootFolder = async () => {
 // ===== Picker API Functions =====
 
 // Show Google Drive Picker
-const showDrivePicker = (callback) => {
+// mimeTypeFilter: optional MIME type to filter files (e.g., 'application/vnd.google-apps.document')
+const showDrivePicker = (callback, mimeTypeFilter = null) => {
     if (typeof google === 'undefined' || !google.picker) {
         console.error('Google Picker API not loaded');
         return;
@@ -455,6 +499,11 @@ const showDrivePicker = (callback) => {
     const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
     view.setIncludeFolders(true);
     view.setSelectFolderEnabled(false);
+    
+    // Apply MIME type filter if provided
+    if (mimeTypeFilter) {
+        view.setMimeTypes(mimeTypeFilter);
+    }
 
     const picker = new google.picker.PickerBuilder()
         .enableFeature(google.picker.Feature.NAV_HIDDEN)
@@ -505,7 +554,7 @@ window.GoogleAPI = {
     getAccessToken,
     checkAuthStatus,
     handleTokenExpiration,
-    getUserInfo: () => Promise.resolve({ email: userEmail }),
+    getUserInfo,
     getAppDataFile,
     createAppDataFile,
     updateAppDataFile,
