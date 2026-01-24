@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.3.1";
+  const APP_VERSION = "2.4.0";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -286,6 +286,7 @@
     </svg>
   );
   const Edit3 = (props) => <IconBase {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></IconBase>;
+  const FolderOpen = (props) => <IconBase {...props}><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></IconBase>;
 
   // --- Constants & Utilities ---
   const COLORS = [
@@ -876,6 +877,8 @@
     const [urlImportValue, setUrlImportValue] = useState('');
     const [favoritesExpanded, setFavoritesExpanded] = useState(false);
     const [showEditEmbed, setShowEditEmbed] = useState(false);
+    const [showDriveImport, setShowDriveImport] = useState(false);
+    const [driveImportUrl, setDriveImportUrl] = useState('');
     const [editEmbedName, setEditEmbedName] = useState('');
     const [editEmbedUrl, setEditEmbedUrl] = useState('');
     const [editEmbedViewMode, setEditEmbedViewMode] = useState('edit'); // 'edit' or 'preview'
@@ -1285,20 +1288,39 @@
                                 }
                             }
                             
-                            // For Google pages: create shortcut if missing
-                            if (isGooglePage && page.driveFileId && !page.driveShortcutId) {
-                                try {
-                                    const shortcut = await GoogleAPI.createDriveShortcut(page.name, page.driveFileId, tabFolderId);
-                                    if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
-                                    if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
-                                    if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
-                                    if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
-                                    driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { 
-                                        ...(driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] || {}),
-                                        driveShortcutId: shortcut.id 
-                                    };
-                                } catch (error) {
-                                    console.error(`Error creating shortcut for page ${page.name}:`, error);
+                            // For Google pages: create JSON link file and shortcut if missing
+                            if (isGooglePage && page.driveFileId) {
+                                // Create JSON link file if missing
+                                if (!page.driveLinkFileId) {
+                                    try {
+                                        const linkFileId = await GoogleAPI.syncGooglePageLink(page, tabFolderId);
+                                        if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
+                                        if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
+                                        if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
+                                        if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
+                                        driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { 
+                                            ...(driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] || {}),
+                                            driveLinkFileId: linkFileId 
+                                        };
+                                    } catch (error) {
+                                        console.error(`Error creating link file for page ${page.name}:`, error);
+                                    }
+                                }
+                                // Create shortcut if missing
+                                if (!page.driveShortcutId) {
+                                    try {
+                                        const shortcut = await GoogleAPI.createDriveShortcut(page.name, page.driveFileId, tabFolderId);
+                                        if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
+                                        if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
+                                        if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
+                                        if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
+                                        driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { 
+                                            ...(driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] || {}),
+                                            driveShortcutId: shortcut.id 
+                                        };
+                                    } catch (error) {
+                                        console.error(`Error creating shortcut for page ${page.name}:`, error);
+                                    }
                                 }
                             }
                         }
@@ -1329,7 +1351,8 @@
                                             return {
                                                 ...page,
                                                 driveFileId: pageUpdate.driveFileId || page.driveFileId,
-                                                driveShortcutId: pageUpdate.driveShortcutId || page.driveShortcutId
+                                                driveShortcutId: pageUpdate.driveShortcutId || page.driveShortcutId,
+                                                driveLinkFileId: pageUpdate.driveLinkFileId || page.driveLinkFileId
                                             };
                                         })
                                     };
@@ -1716,6 +1739,34 @@
         }));
     };
 
+    // Toggle between edit and preview mode for Google pages
+    const toggleViewMode = (pageId) => {
+        setData(prev => ({
+            ...prev,
+            notebooks: prev.notebooks.map(nb => ({
+                ...nb,
+                tabs: nb.tabs.map(t => ({
+                    ...t,
+                    pages: t.pages.map(p => {
+                        if (p.id !== pageId || !p.embedUrl) return p;
+                        
+                        // Toggle between /preview and /edit in the URL
+                        let newEmbedUrl;
+                        if (p.embedUrl.includes('/preview')) {
+                            newEmbedUrl = p.embedUrl.replace('/preview', '/edit');
+                        } else if (p.embedUrl.includes('/edit')) {
+                            newEmbedUrl = p.embedUrl.replace('/edit', '/preview');
+                        } else {
+                            return p; // No change if neither found
+                        }
+                        
+                        return { ...p, embedUrl: newEmbedUrl };
+                    })
+                }))
+            }))
+        }));
+    };
+
     // Get all starred pages across all notebooks/tabs
     const getStarredPages = () => {
         const starred = [];
@@ -1916,6 +1967,95 @@
       }
     };
 
+    // Add a page from a Google Drive URL
+    const addGooglePageFromUrl = (url) => {
+      if (!activeTabId || !url) return false;
+      
+      // Parse Google Drive URLs to extract file ID and type
+      let fileId = null;
+      let pageType = 'drive';
+      let icon = '📁';
+      let typeName = 'File';
+      
+      // Match various Google URLs
+      const docMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9-_]+)/);
+      const sheetMatch = url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      const slideMatch = url.match(/docs\.google\.com\/presentation\/d\/([a-zA-Z0-9-_]+)/);
+      const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9-_]+)/);
+      const openMatch = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9-_]+)/);
+      
+      if (docMatch) {
+        fileId = docMatch[1];
+        pageType = 'doc';
+        icon = '📄';
+        typeName = 'Doc';
+      } else if (sheetMatch) {
+        fileId = sheetMatch[1];
+        pageType = 'sheet';
+        icon = '📊';
+        typeName = 'Sheet';
+      } else if (slideMatch) {
+        fileId = slideMatch[1];
+        pageType = 'slide';
+        icon = '📽️';
+        typeName = 'Slides';
+      } else if (driveMatch) {
+        fileId = driveMatch[1];
+      } else if (openMatch) {
+        fileId = openMatch[1];
+      }
+      
+      if (!fileId) {
+        showNotification('Could not parse Google Drive URL', 'error');
+        return false;
+      }
+      
+      // Build embed URL based on type
+      let embedUrl;
+      if (pageType === 'doc') {
+        embedUrl = `https://docs.google.com/document/d/${fileId}/preview`;
+      } else if (pageType === 'sheet') {
+        embedUrl = `https://docs.google.com/spreadsheets/d/${fileId}/preview`;
+      } else if (pageType === 'slide') {
+        embedUrl = `https://docs.google.com/presentation/d/${fileId}/preview`;
+      } else {
+        embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+      }
+      
+      saveToHistory();
+      const newPage = {
+        id: generateId(),
+        name: `Google ${typeName}`,
+        type: pageType,
+        embedUrl,
+        driveFileId: fileId,
+        webViewLink: url,
+        icon,
+        createdAt: Date.now()
+      };
+      
+      setData(prev => ({
+        ...prev,
+        notebooks: prev.notebooks.map(nb => 
+          nb.id !== activeNotebookId ? nb : {
+            ...nb,
+            tabs: nb.tabs.map(tab => 
+              tab.id !== activeTabId ? tab : {
+                ...tab,
+                pages: [...tab.pages, newPage],
+                activePageId: newPage.id
+              }
+            )
+          }
+        )
+      }));
+      
+      setActivePageId(newPage.id);
+      setStructureVersion(v => v + 1);
+      showNotification(`Google ${typeName} added`, 'success');
+      return true;
+    };
+
     // Add a page from Google Drive Picker
     const addGooglePage = (file) => {
       if (!activeTabId || !file) return;
@@ -2063,7 +2203,7 @@
     };
 
     const handleSaveEmbed = () => {
-      if (!activePage || !editEmbedName) return;
+      if (!activePage || !editEmbedUrl) return;
       
       // Auto-correct URL
       let url = editEmbedUrl.trim();
@@ -2071,10 +2211,10 @@
         url = 'https://' + url;
       }
       
-      // Calculate new embed URL based on page type and view mode
+      // Calculate new embed URL based on page type (keep current view mode)
       let newEmbedUrl = activePage.embedUrl;
       const pageType = activePage.type;
-      const viewSuffix = editEmbedViewMode === 'preview' ? 'preview' : 'edit';
+      const currentViewMode = activePage.embedUrl.includes('/preview') ? 'preview' : 'edit';
       
       if (pageType === 'web') {
         newEmbedUrl = url || activePage.embedUrl;
@@ -2095,11 +2235,11 @@
         if (match) {
           const docId = match[1];
           if (pageType === 'doc') {
-            newEmbedUrl = `https://docs.google.com/document/d/${docId}/${viewSuffix}`;
+            newEmbedUrl = `https://docs.google.com/document/d/${docId}/${currentViewMode}`;
           } else if (pageType === 'sheet') {
-            newEmbedUrl = `https://docs.google.com/spreadsheets/d/${docId}/${viewSuffix}`;
+            newEmbedUrl = `https://docs.google.com/spreadsheets/d/${docId}/${currentViewMode}`;
           } else if (pageType === 'slide') {
-            newEmbedUrl = `https://docs.google.com/presentation/d/${docId}/${viewSuffix}`;
+            newEmbedUrl = `https://docs.google.com/presentation/d/${docId}/${currentViewMode}`;
           }
         }
       }
@@ -2115,7 +2255,6 @@
                 pages: tab.pages.map(p => 
                   p.id !== activePage.id ? p : {
                     ...p,
-                    name: editEmbedName,
                     embedUrl: newEmbedUrl,
                     originalUrl: url || p.originalUrl
                   }
@@ -2204,54 +2343,83 @@
         setTabIconPicker(null);
     };
 
-    const renameItem = async (type, id, newName) => {
+    // Update local state only (for responsive typing) - NO Drive API calls
+    const updateLocalName = (type, id, newName) => {
         setData(prev => {
             const next = JSON.parse(JSON.stringify(prev));
             next.notebooks.forEach(nb => {
                 if (type === 'notebook' && nb.id === id) {
                     nb.name = newName;
-                    // Update Drive folder name if authenticated
-                    if (isAuthenticated && typeof GoogleAPI !== 'undefined' && nb.driveFolderId) {
-                        GoogleAPI.renameDriveItem(nb.driveFolderId, newName).catch(err => {
-                            console.error('Error updating notebook folder:', err);
-                        });
-                    }
                 }
                 nb.tabs.forEach(tab => {
                     if (type === 'tab' && tab.id === id) {
                         tab.name = newName;
-                        // Update Drive folder name if authenticated
-                        if (isAuthenticated && typeof GoogleAPI !== 'undefined' && tab.driveFolderId) {
-                            GoogleAPI.renameDriveItem(tab.driveFolderId, newName).catch(err => {
-                                console.error('Error updating tab folder:', err);
-                            });
-                        }
                     }
                     tab.pages.forEach(pg => {
                         if (pg.id === id) {
                             pg.name = newName;
-                            if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-                                // For block pages: rename the JSON file
-                                if (pg.driveFileId) {
-                                    GoogleAPI.renameDriveItem(pg.driveFileId, GoogleAPI.sanitizeFileName(newName) + '.json').catch(err => {
-                                        console.error('Error updating page file:', err);
-                                    });
-                                }
-                                // For Google pages: rename the shortcut (not the original file)
-                                if (pg.driveShortcutId) {
-                                    GoogleAPI.renameDriveItem(pg.driveShortcutId, newName).catch(err => {
-                                        console.error('Error updating page shortcut:', err);
-                                    });
-                                }
-                            }
                         }
                     });
                 });
             });
             return next;
         });
-        // Trigger structure sync for rename
-        setStructureVersion(v => v + 1);
+    };
+
+    // Sync rename to Drive - called on blur (when editing is finished)
+    const syncRenameToDrive = async (type, id) => {
+        if (!isAuthenticated || typeof GoogleAPI === 'undefined') return;
+        
+        // Find the item and sync its name to Drive
+        for (const nb of data.notebooks) {
+            if (type === 'notebook' && nb.id === id && nb.driveFolderId) {
+                try {
+                    await GoogleAPI.renameDriveItem(nb.driveFolderId, GoogleAPI.sanitizeFileName(nb.name));
+                } catch (err) {
+                    console.error('Error updating notebook folder:', err);
+                }
+                setStructureVersion(v => v + 1);
+                return;
+            }
+            for (const tab of nb.tabs) {
+                if (type === 'tab' && tab.id === id && tab.driveFolderId) {
+                    try {
+                        await GoogleAPI.renameDriveItem(tab.driveFolderId, GoogleAPI.sanitizeFileName(tab.name));
+                    } catch (err) {
+                        console.error('Error updating tab folder:', err);
+                    }
+                    setStructureVersion(v => v + 1);
+                    return;
+                }
+                for (const pg of tab.pages) {
+                    if (pg.id === id) {
+                        // For block pages: rename the JSON file
+                        if (pg.driveFileId) {
+                            try {
+                                await GoogleAPI.renameDriveItem(pg.driveFileId, GoogleAPI.sanitizeFileName(pg.name) + '.json');
+                            } catch (err) {
+                                console.error('Error updating page file:', err);
+                            }
+                        }
+                        // For Google pages: rename the shortcut
+                        if (pg.driveShortcutId) {
+                            try {
+                                await GoogleAPI.renameDriveItem(pg.driveShortcutId, pg.name);
+                            } catch (err) {
+                                console.error('Error updating page shortcut:', err);
+                            }
+                        }
+                        setStructureVersion(v => v + 1);
+                        return;
+                    }
+                }
+            }
+        }
+    };
+
+    // Legacy function for compatibility - just calls updateLocalName
+    const renameItem = (type, id, newName) => {
+        updateLocalName(type, id, newName);
     }
 
     const initiateDelete = (type, id) => setItemToDelete({ type, id });
@@ -2679,7 +2847,7 @@
                           {nb.icon || '📓'}
                       </span>
                       {!settings.condensedView && (activeNotebookId === nb.id && editingNotebookId === nb.id ? (
-                          <input ref={(el) => notebookInputRefs.current[nb.id] = el} className="bg-transparent border-none outline-none w-full notebook-input" value={nb.name} onChange={(e) => renameItem('notebook', nb.id, e.target.value)} onClick={(e) => e.stopPropagation()} onFocus={(e) => e.target.select()} onBlur={() => { if (!creationFlow) setEditingNotebookId(null); }} onKeyDown={(e) => { 
+                          <input ref={(el) => notebookInputRefs.current[nb.id] = el} className="bg-transparent border-none outline-none w-full notebook-input" value={nb.name} onChange={(e) => updateLocalName('notebook', nb.id, e.target.value)} onClick={(e) => e.stopPropagation()} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('notebook', nb.id); if (!creationFlow) setEditingNotebookId(null); }} onKeyDown={(e) => { 
                               if(e.key === 'Enter') {
                                   e.preventDefault();
                                   setEditingNotebookId(null);
@@ -2801,7 +2969,7 @@
                           {tab.icon || '📋'}
                       </span>
                       {showName && !settings.condensedView && (activeTabId === tab.id && editingTabId === tab.id ? (
-                          <input ref={(el) => tabInputRefs.current[tab.id] = el} className="bg-transparent border-none outline-none w-full font-medium tab-input min-w-0" value={tab.name} onChange={(e) => renameItem('tab', tab.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { if (!creationFlow) setEditingTabId(null); }} onKeyDown={(e) => { 
+                          <input ref={(el) => tabInputRefs.current[tab.id] = el} className="bg-transparent border-none outline-none w-full font-medium tab-input min-w-0" value={tab.name} onChange={(e) => updateLocalName('tab', tab.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('tab', tab.id); if (!creationFlow) setEditingTabId(null); }} onKeyDown={(e) => { 
                               if(e.key === 'Enter') {
                                   e.preventDefault();
                                   setEditingTabId(null);
@@ -2896,6 +3064,20 @@
                                   >
                                       <Star size={16} filled={activePage.starred} />
                                   </button>
+                                  {/* Edit/Preview Toggle - Only for Google Docs/Sheets/Slides */}
+                                  {['doc', 'sheet', 'slide'].includes(activePage.type) && (
+                                      <button
+                                          onClick={() => toggleViewMode(activePage.id)}
+                                          className={`ml-1 px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
+                                              activePage.embedUrl.includes('/preview') 
+                                                  ? 'bg-gray-200 text-gray-600 hover:bg-gray-300' 
+                                                  : 'bg-blue-500 text-white hover:bg-blue-600'
+                                          }`}
+                                          title={activePage.embedUrl.includes('/preview') ? 'Click to enable editing' : 'Click to switch to preview mode'}
+                                      >
+                                          {activePage.embedUrl.includes('/preview') ? 'Preview' : 'Editing'}
+                                      </button>
+                                  )}
                                   <span className="text-xs text-gray-400 ml-auto">
                                       {activePage.type === 'doc' ? 'Google Docs' : 
                                        activePage.type === 'sheet' ? 'Google Sheets' : 
@@ -3005,7 +3187,7 @@
 
                               <div className="mb-8 border-b border-gray-100 pb-4">
                                    <div className="flex items-start gap-3">
-                                       <input ref={titleInputRef} className="text-4xl font-bold flex-1 outline-none placeholder-gray-300 py-3 leading-normal bg-transparent" value={activePage.name} onChange={(e) => renameItem('page', activePage.id, e.target.value)} onClick={(e) => e.target.select()} onKeyDown={handleTitleKeyDown} />
+                                       <input ref={titleInputRef} className="text-4xl font-bold flex-1 outline-none placeholder-gray-300 py-3 leading-normal bg-transparent" value={activePage.name} onChange={(e) => updateLocalName('page', activePage.id, e.target.value)} onBlur={() => syncRenameToDrive('page', activePage.id)} onClick={(e) => e.target.select()} onKeyDown={handleTitleKeyDown} />
                                    </div>
                                    <div className="text-gray-400 text-xs mt-2 flex gap-4">
                                       <span>Created: Today {new Date(activePage.createdAt).toLocaleDateString()} {new Date(activePage.createdAt).toLocaleTimeString()} • {activePage.rows.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0)} blocks</span>
@@ -3171,31 +3353,29 @@
                                       <div className="border-t border-gray-100 my-1"></div>
                                       <button onClick={() => { 
                                           if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
-                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file));
+                                          setShowDriveImport(true);
+                                          setDriveImportUrl('');
                                           setShowPageTypeMenu(false); 
                                       }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
                                           <GoogleG size={18} /> Google Drive
                                       </button>
                                       <button onClick={() => { 
-                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
-                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file), 'application/vnd.google-apps.document');
+                                          showNotification('Coming soon - create new Google Docs directly', 'info');
                                           setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
-                                          <span className="text-lg">📄</span> Google Doc
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm text-gray-400">
+                                          <span className="text-lg">📄</span> Google Doc <span className="text-xs ml-auto">(coming soon)</span>
                                       </button>
                                       <button onClick={() => { 
-                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
-                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file), 'application/vnd.google-apps.spreadsheet');
+                                          showNotification('Coming soon - create new Google Sheets directly', 'info');
                                           setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
-                                          <span className="text-lg">📊</span> Google Sheet
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm text-gray-400">
+                                          <span className="text-lg">📊</span> Google Sheet <span className="text-xs ml-auto">(coming soon)</span>
                                       </button>
                                       <button onClick={() => { 
-                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
-                                          GoogleAPI.showDrivePicker((file) => addGooglePage(file), 'application/vnd.google-apps.presentation');
+                                          showNotification('Coming soon - create new Google Slides directly', 'info');
                                           setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
-                                          <span className="text-lg">📽️</span> Google Slides
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm text-gray-400">
+                                          <span className="text-lg">📽️</span> Google Slides <span className="text-xs ml-auto">(coming soon)</span>
                                       </button>
                                       <div className="border-t border-gray-100 my-1"></div>
                                       <button onClick={() => { setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
@@ -3214,7 +3394,7 @@
                                   title={settings.condensedView ? page.name : undefined}>
                                   <span className={settings.condensedView ? 'text-xl' : 'mr-1'}>{page.icon || '📄'}</span>
                                   {!settings.condensedView && (activePageId === page.id && editingPageId === page.id ? (
-                                      <input className="flex-1 bg-transparent outline-none page-input" value={page.name} onChange={(e) => renameItem('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => setEditingPageId(null)} onKeyDown={(e) => e.stopPropagation()} autoFocus />
+                                      <input className="flex-1 bg-transparent outline-none page-input" value={page.name} onChange={(e) => updateLocalName('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('page', page.id); setEditingPageId(null); }} onKeyDown={(e) => e.stopPropagation()} autoFocus />
                                   ) : ( 
                                       <div className="flex-1 truncate" onClick={(e) => { if(activePageId === page.id) { e.stopPropagation(); setEditingPageId(page.id); } }}>{page.name}</div> 
                                   ))}
@@ -3324,6 +3504,80 @@
               </div>
           )}
 
+          {/* Google Drive Import Modal */}
+          {showDriveImport && (
+              <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
+                      <div className="flex items-center justify-between mb-6">
+                          <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
+                              <GoogleG size={20} /> Add from Google Drive
+                          </h3>
+                          <button onClick={() => { setShowDriveImport(false); setDriveImportUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                              <X size={20} className="dark:text-white" />
+                          </button>
+                      </div>
+
+                      <div className="mb-6">
+                          <button 
+                              onClick={() => {
+                                  GoogleAPI.showDrivePicker((file) => {
+                                      addGooglePage(file);
+                                      setShowDriveImport(false);
+                                      setDriveImportUrl('');
+                                  });
+                              }}
+                              className="w-full py-3 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
+                          >
+                              <FolderOpen size={18} /> Browse My Drive
+                          </button>
+                      </div>
+
+                      <div className="flex items-center gap-3 mb-6">
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                          <span className="text-sm text-gray-400">OR</span>
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                      </div>
+
+                      <div className="mb-6">
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Paste a Google Drive URL
+                          </label>
+                          <input 
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                              placeholder="https://docs.google.com/... or https://drive.google.com/..."
+                              value={driveImportUrl}
+                              onChange={(e) => setDriveImportUrl(e.target.value)}
+                              autoFocus
+                          />
+                          <p className="text-xs text-gray-400 mt-2">
+                              Paste a link to a Google Doc, Sheet, Slides, or any Drive file shared with you.
+                          </p>
+                      </div>
+
+                      <div className="flex justify-end gap-3">
+                          <button 
+                              onClick={() => { setShowDriveImport(false); setDriveImportUrl(''); }}
+                              className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={() => {
+                                  if (addGooglePageFromUrl(driveImportUrl)) {
+                                      setShowDriveImport(false);
+                                      setDriveImportUrl('');
+                                  }
+                              }}
+                              disabled={!driveImportUrl}
+                              className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              Add Page
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+
           {showEditEmbed && activePage && (
               <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
@@ -3335,38 +3589,6 @@
                               <X size={20} className="dark:text-white" />
                           </button>
                       </div>
-
-                      <div className="mb-4">
-                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Page Name</label>
-                          <input 
-                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                              value={editEmbedName}
-                              onChange={(e) => setEditEmbedName(e.target.value)}
-                              autoFocus
-                          />
-                      </div>
-
-                      {/* View Mode Toggle - Only for Google Docs/Sheets/Slides */}
-                      {['doc', 'sheet', 'slide'].includes(activePage.type) && (
-                          <div className="mb-4">
-                              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">View Mode</label>
-                              <div className="flex items-center gap-4">
-                                  <button
-                                      onClick={() => setEditEmbedViewMode('edit')}
-                                      className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${editEmbedViewMode === 'edit' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-                                  >
-                                      Edit Mode
-                                  </button>
-                                  <button
-                                      onClick={() => setEditEmbedViewMode('preview')}
-                                      className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${editEmbedViewMode === 'preview' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-                                  >
-                                      Preview Mode
-                                  </button>
-                              </div>
-                              <p className="text-xs text-gray-400 mt-2">Edit mode allows editing in the iframe. Preview mode is read-only.</p>
-                          </div>
-                      )}
 
                       <div className="mb-6">
                           <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
@@ -3398,7 +3620,7 @@
                           </button>
                           <button 
                               onClick={handleSaveEmbed}
-                              disabled={!editEmbedName}
+                              disabled={!editEmbedUrl}
                               className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                               Save Changes

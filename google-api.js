@@ -697,6 +697,77 @@ const syncPageToDrive = async (page, tabFolderId) => {
     }
 };
 
+// Sync a Google page link to Drive (creates a JSON file with metadata)
+const syncGooglePageLink = async (page, tabFolderId) => {
+    try {
+        await ensureAuthenticated();
+        
+        const fileName = sanitizeFileName(page.name) + '.json';
+        const linkContent = {
+            type: page.type || 'google-link',
+            name: page.name,
+            icon: page.icon,
+            embedUrl: page.embedUrl,
+            webViewLink: page.webViewLink,
+            driveFileId: page.driveFileId, // The linked Google file ID
+            createdAt: page.createdAt,
+            modifiedAt: Date.now()
+        };
+        
+        // If page already has a link file ID, update it
+        if (page.driveLinkFileId) {
+            try {
+                const existing = await gapi.client.drive.files.get({
+                    fileId: page.driveLinkFileId,
+                    fields: 'id, name, trashed'
+                });
+                if (!existing.result.trashed) {
+                    // File exists, update it
+                    const form = new FormData();
+                    form.append('metadata', new Blob([JSON.stringify({ name: fileName })], { type: 'application/json' }));
+                    form.append('file', new Blob([JSON.stringify(linkContent)], { type: 'application/json' }));
+                    
+                    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${page.driveLinkFileId}?uploadType=multipart`, {
+                        method: 'PATCH',
+                        headers: { 'Authorization': `Bearer ${accessToken}` },
+                        body: form
+                    });
+                    return page.driveLinkFileId;
+                }
+            } catch (e) {
+                // File doesn't exist, will create new one
+            }
+        }
+        
+        // Create new link file
+        const metadata = {
+            name: fileName,
+            parents: [tabFolderId],
+            mimeType: 'application/json'
+        };
+        
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', new Blob([JSON.stringify(linkContent)], { type: 'application/json' }));
+        
+        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            body: form
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to create link file: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        return result.id;
+    } catch (error) {
+        console.error('Error syncing Google page link to Drive:', error);
+        throw error;
+    }
+};
+
 // Helper: Strip HTML tags and get plain text
 const stripHtml = (html) => {
     if (!html) return '';
@@ -1289,17 +1360,22 @@ const showDrivePicker = (callback, mimeTypeFilter = null) => {
         return;
     }
 
-    const view = new google.picker.DocsView(google.picker.ViewId.DOCS);
-    view.setIncludeFolders(true);
-    view.setSelectFolderEnabled(false);
+    // Recent files view (default/first view)
+    const recentView = new google.picker.DocsView(google.picker.ViewId.RECENTLY_PICKED);
+    recentView.setIncludeFolders(false);
+    
+    // All documents view
+    const docsView = new google.picker.DocsView(google.picker.ViewId.DOCS);
+    docsView.setIncludeFolders(true);
+    docsView.setSelectFolderEnabled(false);
     
     // Apply MIME type filter if provided
     if (mimeTypeFilter) {
-        view.setMimeTypes(mimeTypeFilter);
+        recentView.setMimeTypes(mimeTypeFilter);
+        docsView.setMimeTypes(mimeTypeFilter);
     }
 
     const picker = new google.picker.PickerBuilder()
-        .enableFeature(google.picker.Feature.NAV_HIDDEN)
         .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
         .setOAuthToken(accessToken)
         .setDeveloperKey(GOOGLE_CONFIG.API_KEY)
@@ -1332,7 +1408,8 @@ const showDrivePicker = (callback, mimeTypeFilter = null) => {
                 }
             }
         })
-        .addView(view)
+        .addView(recentView)  // Recent files shown first
+        .addView(docsView)    // All documents as second option
         .build();
 
     picker.setVisible(true);
@@ -1519,6 +1596,7 @@ window.GoogleAPI = {
     syncNotebookToDrive,
     syncTabToDrive,
     syncPageToDrive,
+    syncGooglePageLink,
     getDriveItem,
     renameDriveItem,
     moveDriveItem,
