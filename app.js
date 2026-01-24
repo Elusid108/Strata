@@ -2801,7 +2801,7 @@
     return (
       <div className="flex h-screen w-full bg-gray-50 overflow-hidden font-sans text-sm">
         {/* NOTEBOOKS SIDEBAR */}
-        <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 transition-all duration-200`}>
+        <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-900 text-gray-700 dark:text-gray-300 transition-all duration-200`}>
           <div className={`p-4 border-b border-gray-200 dark:border-gray-800 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
               {!settings.condensedView && <span className="font-bold text-gray-900 dark:text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
               <button onClick={addNotebook} className="hover:bg-gray-200 dark:hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
@@ -3022,7 +3022,22 @@
               <div className="h-12 bg-gray-100 border-b border-gray-300 flex items-center px-4 text-gray-400">Select a notebook</div>
           )}
 
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex overflow-hidden relative">
+              {/* Session-wide cached iframes - persist across all tab/notebook switches */}
+              {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
+                  .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
+                  .map(page => (
+                      <iframe 
+                          key={page.id}
+                          src={page.embedUrl}
+                          className={`absolute inset-0 w-full h-full border-0 z-10 ${
+                              activePage?.id === page.id && activePage?.embedUrl ? '' : 'hidden'
+                          }`}
+                          style={{ top: activePage?.id === page.id ? '52px' : '0' }}
+                          allow="autoplay"
+                      />
+                  ))
+              }
               <div className={`flex-1 overflow-y-auto ${activePage?.embedUrl ? 'p-0' : 'p-8'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {activePage ? (
                       activePage.embedUrl ? (
@@ -3106,20 +3121,8 @@
                                        activePage.type === 'pdf' ? 'PDF Document' : 'Embed'}
                                   </span>
                               </div>
-                              {/* Render all cached embed page iframes - only show active one */}
-                              <div className="flex-1 w-full relative">
-                                  {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
-                                      .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
-                                      .map(page => (
-                                          <iframe 
-                                              key={page.id}
-                                              src={page.embedUrl}
-                                              className={`absolute inset-0 w-full h-full border-0 ${page.id === activePageId ? '' : 'hidden'}`}
-                                              allow="autoplay"
-                                          />
-                                      ))
-                                  }
-                              </div>
+                              {/* Placeholder for iframe - actual iframes rendered at higher level for caching */}
+                              <div className="flex-1 w-full relative" />
                           </div>
                       ) : (
                       // Regular block page
@@ -3370,7 +3373,7 @@
                       <div className={`p-3 border-b bg-gray-50 flex ${settings.condensedView ? 'justify-center' : 'justify-between'} items-center relative`}>
                           {!settings.condensedView && <span className="font-semibold text-gray-600 text-xs uppercase tracking-wider">Pages</span>}
                           <div className="relative">
-                              <button onClick={() => setShowPageTypeMenu(!showPageTypeMenu)} className="hover:bg-gray-200 p-1 rounded transition-colors page-type-trigger" title="Add page"><Plus size={16} /></button>
+                              <button onClick={() => setShowPageTypeMenu(!showPageTypeMenu)} className="hover:bg-gray-200 p-1 rounded transition-colors text-gray-500 page-type-trigger" title="Add page"><Plus size={16} /></button>
                               {showPageTypeMenu && (
                                   <div className="page-type-menu absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-1 w-48 animate-fade-in">
                                       <button onClick={() => { addPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
