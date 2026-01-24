@@ -287,6 +287,7 @@
   );
   const Edit3 = (props) => <IconBase {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></IconBase>;
   const FolderOpen = (props) => <IconBase {...props}><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></IconBase>;
+  const FilePlus = (props) => <IconBase {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" x2="12" y1="18" y2="12"/><line x1="9" x2="15" y1="15" y2="15"/></IconBase>;
 
   // --- Constants & Utilities ---
   const COLORS = [
@@ -879,6 +880,12 @@
     const [showEditEmbed, setShowEditEmbed] = useState(false);
     const [showDriveImport, setShowDriveImport] = useState(false);
     const [driveImportUrl, setDriveImportUrl] = useState('');
+    const [showDocImport, setShowDocImport] = useState(false);
+    const [showSheetImport, setShowSheetImport] = useState(false);
+    const [showSlideImport, setShowSlideImport] = useState(false);
+    const [docImportUrl, setDocImportUrl] = useState('');
+    const [sheetImportUrl, setSheetImportUrl] = useState('');
+    const [slideImportUrl, setSlideImportUrl] = useState('');
     const [viewedEmbedPages, setViewedEmbedPages] = useState(new Set());
     const [editEmbedName, setEditEmbedName] = useState('');
     const [editEmbedUrl, setEditEmbedUrl] = useState('');
@@ -1182,30 +1189,34 @@
 
     // Focus main Title logic
     useEffect(() => {
-        if (shouldFocusTitle && titleInputRef.current) {
-            titleInputRef.current.focus();
-            titleInputRef.current.select();
-            setShouldFocusTitle(false);
+        if (shouldFocusTitle) {
+            setTimeout(() => {
+                if (titleInputRef.current) {
+                    titleInputRef.current.focus();
+                    titleInputRef.current.select();
+                }
+                setShouldFocusTitle(false);
+            }, 100);
         }
     }, [activePageId, shouldFocusTitle]);
 
     // Focus notebook input when editing starts
     useEffect(() => {
-        if (editingNotebookId && notebookInputRefs.current[editingNotebookId]) {
+        if (editingNotebookId) {
             setTimeout(() => {
                 const input = notebookInputRefs.current[editingNotebookId];
                 if (input) { input.focus(); input.select(); }
-            }, 50);
+            }, 100);
         }
     }, [editingNotebookId]);
 
     // Focus tab input when editing starts
     useEffect(() => {
-        if (editingTabId && tabInputRefs.current[editingTabId]) {
+        if (editingTabId) {
             setTimeout(() => {
                 const input = tabInputRefs.current[editingTabId];
                 if (input) { input.focus(); input.select(); }
-            }, 50);
+            }, 100);
         }
     }, [editingTabId]);
 
@@ -1618,7 +1629,6 @@
         )
       };
       setData(newData);
-      if (shouldSaveHistory) saveToHistory(newData);
     };
 
     const updatePageMeta = (updates) => {
@@ -1821,7 +1831,6 @@
       const newNb = { id: generateId(), name: 'New Notebook', icon: '📓', tabs: [newTab], activeTabId: newTab.id };
       const newData = { ...data, notebooks: [...data.notebooks, newNb] };
       setData(newData);
-      saveToHistory(newData);
       setActiveNotebookId(newNb.id);
       setActiveTabId(newTab.id);
       setActivePageId(newPage.id);
@@ -1880,7 +1889,6 @@
         )
       };
       setData(newData);
-      saveToHistory(newData);
       setActiveTabId(newTab.id);
       setActivePageId(newPage.id);
       setEditingPageId(null);
@@ -1943,7 +1951,6 @@
         )
       };
       setData(newData);
-      saveToHistory(newData);
       setActivePageId(newPage.id);
       setEditingPageId(null);  // Don't edit in sidebar
       setEditingTabId(null);
@@ -2145,7 +2152,6 @@
       };
       
       setData(newData);
-      saveToHistory(newData);
       setActivePageId(newPage.id);
       showNotification(`${file.name || 'Google ' + typeName} added`, 'success');
     };
@@ -2200,7 +2206,6 @@
       };
       
       setData(newData);
-      saveToHistory(newData);
       setActivePageId(newPage.id);
       setShowUrlImport(false);
       setUrlImportValue('');
@@ -2506,7 +2511,6 @@
         }
         
         setData(newData);
-        saveToHistory(newData);
         if (itemToDelete && itemToDelete.id === id) setItemToDelete(null);
         if (activeTabMenu && activeTabMenu.id === id) setActiveTabMenu(null);
         if (selectedBlockId === id) setSelectedBlockId(null);
@@ -2551,7 +2555,6 @@
             }
         }
         setData(newData);
-        saveToHistory(newData);
     };
 
     const handleDragStart = (e, block, rowId, colId) => {
@@ -3022,23 +3025,24 @@
               <div className="h-12 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-center px-4 text-gray-500 dark:text-gray-400">Select a notebook</div>
           )}
 
-          <div className="flex-1 flex overflow-hidden relative">
-              {/* Session-wide cached iframes - persist across all tab/notebook switches */}
-              {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
-                  .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
-                  .map(page => (
-                      <iframe 
-                          key={page.id}
-                          src={page.embedUrl}
-                          className={`absolute inset-0 w-full h-full border-0 z-10 ${
-                              activePage?.id === page.id && activePage?.embedUrl ? '' : 'hidden'
-                          }`}
-                          style={{ top: activePage?.id === page.id ? '52px' : '0' }}
-                          allow="autoplay"
-                      />
-                  ))
-              }
-              <div className={`flex-1 overflow-y-auto ${activePage?.embedUrl ? 'p-0' : 'p-8'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+          <div className="flex-1 flex overflow-hidden">
+              {/* Main content area with cached iframes */}
+              <div className={`flex-1 overflow-y-auto relative ${activePage?.embedUrl ? 'p-0' : 'p-8'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+                  {/* Session-wide cached iframes - persist across all tab/notebook switches */}
+                  {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
+                      .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
+                      .map(page => (
+                          <iframe 
+                              key={page.id}
+                              src={page.embedUrl}
+                              className={`absolute inset-0 w-full h-full border-0 ${
+                                  activePage?.id === page.id && activePage?.embedUrl ? '' : 'hidden'
+                              }`}
+                              style={{ top: activePage?.id === page.id ? '52px' : '0' }}
+                              allow="autoplay"
+                          />
+                      ))
+                  }
                   {activePage ? (
                       activePage.embedUrl ? (
                           // Embedded page (Google Docs/Sheets/Slides, Web, PDF)
@@ -3368,39 +3372,40 @@
                           <div className="relative">
                               <button onClick={() => setShowPageTypeMenu(!showPageTypeMenu)} className="hover:bg-gray-200 p-1 rounded transition-colors text-gray-500 page-type-trigger" title="Add page"><Plus size={16} /></button>
                               {showPageTypeMenu && (
-                                  <div className="page-type-menu absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 py-1 w-48 animate-fade-in">
-                                      <button onClick={() => { addPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                  <div className="page-type-menu absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 py-1 w-48 animate-fade-in">
+                                      <button onClick={() => { addPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">📝</span> Block Page
                                       </button>
-                                      <div className="border-t border-gray-100 my-1"></div>
+                                      <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                       <button onClick={() => { 
                                           if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
-                                          setShowDriveImport(true);
-                                          setDriveImportUrl('');
-                                          setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                          setShowPageTypeMenu(false);
+                                          GoogleAPI.showDrivePicker((file) => {
+                                              addGooglePage(file);
+                                          });
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <GoogleG size={18} /> Google Drive
                                       </button>
                                       <button onClick={() => { 
-                                          showNotification('Coming soon - create new Google Docs directly', 'info');
+                                          setShowDocImport(true);
                                           setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm text-gray-400">
-                                          <span className="text-lg">📄</span> Google Doc <span className="text-xs ml-auto">(coming soon)</span>
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">📄</span> Google Doc
                                       </button>
                                       <button onClick={() => { 
-                                          showNotification('Coming soon - create new Google Sheets directly', 'info');
+                                          setShowSheetImport(true);
                                           setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm text-gray-400">
-                                          <span className="text-lg">📊</span> Google Sheet <span className="text-xs ml-auto">(coming soon)</span>
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">📊</span> Google Sheet
                                       </button>
                                       <button onClick={() => { 
-                                          showNotification('Coming soon - create new Google Slides directly', 'info');
+                                          setShowSlideImport(true);
                                           setShowPageTypeMenu(false); 
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm text-gray-400">
-                                          <span className="text-lg">📽️</span> Google Slides <span className="text-xs ml-auto">(coming soon)</span>
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">📽️</span> Google Slides
                                       </button>
-                                      <div className="border-t border-gray-100 my-1"></div>
-                                      <button onClick={() => { setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-3 text-sm">
+                                      <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
+                                      <button onClick={() => { setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">📑</span> PDF Document
                                       </button>
                                   </div>
@@ -3591,6 +3596,213 @@
                                   }
                               }}
                               disabled={!driveImportUrl}
+                              className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              Add Page
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {/* Google Doc Import Modal */}
+          {showDocImport && (
+              <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
+                      <div className="flex items-center justify-between mb-6">
+                          <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
+                              <span className="text-2xl">📄</span> Add Google Doc
+                          </h3>
+                          <button onClick={() => { setShowDocImport(false); setDocImportUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                              <X size={20} className="dark:text-white" />
+                          </button>
+                      </div>
+
+                      <div className="mb-6">
+                          <button 
+                              title="Feature coming soon"
+                              className="w-full py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-400 font-medium rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                              <FilePlus size={18} /> New Document
+                          </button>
+                      </div>
+
+                      <div className="flex items-center gap-3 mb-6">
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                          <span className="text-sm text-gray-400">OR</span>
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                      </div>
+
+                      <div className="mb-6">
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Google Doc URL
+                          </label>
+                          <input 
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                              placeholder="https://docs.google.com/document/d/..."
+                              value={docImportUrl}
+                              onChange={(e) => setDocImportUrl(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && docImportUrl) { addGooglePageFromUrl(docImportUrl); setShowDocImport(false); setDocImportUrl(''); } }}
+                              autoFocus
+                          />
+                          <p className="text-xs text-gray-400 mt-2">
+                              Paste a link to a Google Doc shared with "anyone with link"
+                          </p>
+                      </div>
+
+                      <div className="flex justify-end gap-3">
+                          <button 
+                              onClick={() => { setShowDocImport(false); setDocImportUrl(''); }}
+                              className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={() => {
+                                  if (addGooglePageFromUrl(docImportUrl)) {
+                                      setShowDocImport(false);
+                                      setDocImportUrl('');
+                                  }
+                              }}
+                              disabled={!docImportUrl}
+                              className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              Add Page
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {/* Google Sheet Import Modal */}
+          {showSheetImport && (
+              <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
+                      <div className="flex items-center justify-between mb-6">
+                          <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
+                              <span className="text-2xl">📊</span> Add Google Sheet
+                          </h3>
+                          <button onClick={() => { setShowSheetImport(false); setSheetImportUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                              <X size={20} className="dark:text-white" />
+                          </button>
+                      </div>
+
+                      <div className="mb-6">
+                          <button 
+                              title="Feature coming soon"
+                              className="w-full py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-400 font-medium rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                              <FilePlus size={18} /> New Spreadsheet
+                          </button>
+                      </div>
+
+                      <div className="flex items-center gap-3 mb-6">
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                          <span className="text-sm text-gray-400">OR</span>
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                      </div>
+
+                      <div className="mb-6">
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Google Sheet URL
+                          </label>
+                          <input 
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                              placeholder="https://docs.google.com/spreadsheets/d/..."
+                              value={sheetImportUrl}
+                              onChange={(e) => setSheetImportUrl(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && sheetImportUrl) { addGooglePageFromUrl(sheetImportUrl); setShowSheetImport(false); setSheetImportUrl(''); } }}
+                              autoFocus
+                          />
+                          <p className="text-xs text-gray-400 mt-2">
+                              Paste a link to a Google Sheet shared with "anyone with link"
+                          </p>
+                      </div>
+
+                      <div className="flex justify-end gap-3">
+                          <button 
+                              onClick={() => { setShowSheetImport(false); setSheetImportUrl(''); }}
+                              className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={() => {
+                                  if (addGooglePageFromUrl(sheetImportUrl)) {
+                                      setShowSheetImport(false);
+                                      setSheetImportUrl('');
+                                  }
+                              }}
+                              disabled={!sheetImportUrl}
+                              className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              Add Page
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {/* Google Slides Import Modal */}
+          {showSlideImport && (
+              <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
+                      <div className="flex items-center justify-between mb-6">
+                          <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
+                              <span className="text-2xl">📽️</span> Add Google Slides
+                          </h3>
+                          <button onClick={() => { setShowSlideImport(false); setSlideImportUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                              <X size={20} className="dark:text-white" />
+                          </button>
+                      </div>
+
+                      <div className="mb-6">
+                          <button 
+                              title="Feature coming soon"
+                              className="w-full py-3 px-4 bg-gray-100 dark:bg-gray-700 text-gray-400 font-medium rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                              <FilePlus size={18} /> New Presentation
+                          </button>
+                      </div>
+
+                      <div className="flex items-center gap-3 mb-6">
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                          <span className="text-sm text-gray-400">OR</span>
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+                      </div>
+
+                      <div className="mb-6">
+                          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                              Google Slides URL
+                          </label>
+                          <input 
+                              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                              placeholder="https://docs.google.com/presentation/d/..."
+                              value={slideImportUrl}
+                              onChange={(e) => setSlideImportUrl(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && slideImportUrl) { addGooglePageFromUrl(slideImportUrl); setShowSlideImport(false); setSlideImportUrl(''); } }}
+                              autoFocus
+                          />
+                          <p className="text-xs text-gray-400 mt-2">
+                              Paste a link to a Google Slides presentation shared with "anyone with link"
+                          </p>
+                      </div>
+
+                      <div className="flex justify-end gap-3">
+                          <button 
+                              onClick={() => { setShowSlideImport(false); setSlideImportUrl(''); }}
+                              className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={() => {
+                                  if (addGooglePageFromUrl(slideImportUrl)) {
+                                      setShowSlideImport(false);
+                                      setSlideImportUrl('');
+                                  }
+                              }}
+                              disabled={!slideImportUrl}
                               className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                               Add Page

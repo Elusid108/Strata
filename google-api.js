@@ -1364,15 +1364,27 @@ const showDrivePicker = (callback, mimeTypeFilter = null) => {
     const recentView = new google.picker.DocsView(google.picker.ViewId.RECENTLY_PICKED);
     recentView.setIncludeFolders(false);
     
-    // All documents view
-    const docsView = new google.picker.DocsView(google.picker.ViewId.DOCS);
-    docsView.setIncludeFolders(true);
-    docsView.setSelectFolderEnabled(false);
+    // My Drive view
+    const myDriveView = new google.picker.DocsView();
+    myDriveView.setIncludeFolders(true);
+    myDriveView.setSelectFolderEnabled(false);
+    
+    // Shared with Me view
+    const sharedView = new google.picker.DocsView();
+    sharedView.setOwnedByMe(false);
+    sharedView.setIncludeFolders(true);
+    
+    // Starred view
+    const starredView = new google.picker.DocsView();
+    starredView.setStarred(true);
+    starredView.setIncludeFolders(true);
     
     // Apply MIME type filter if provided
     if (mimeTypeFilter) {
         recentView.setMimeTypes(mimeTypeFilter);
-        docsView.setMimeTypes(mimeTypeFilter);
+        myDriveView.setMimeTypes(mimeTypeFilter);
+        sharedView.setMimeTypes(mimeTypeFilter);
+        starredView.setMimeTypes(mimeTypeFilter);
     }
 
     const picker = new google.picker.PickerBuilder()
@@ -1408,8 +1420,10 @@ const showDrivePicker = (callback, mimeTypeFilter = null) => {
                 }
             }
         })
-        .addView(recentView)  // Recent files shown first
-        .addView(docsView)    // All documents as second option
+        .addView(recentView)   // Recent files shown first
+        .addView(myDriveView)  // My Drive
+        .addView(sharedView)   // Shared with Me
+        .addView(starredView)  // Starred files
         .build();
 
     picker.setVisible(true);
