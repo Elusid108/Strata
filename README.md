@@ -113,6 +113,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.4.6** - Fixed /div slash command not creating divider blocks (stale closure race condition)
 - **v2.4.5** - Zoom controls for embedded Google Docs/Sheets/Slides pages
 - **v2.4.4** - Fixed Google Drive data loading when duplicate manifest files exist (now loads most recently modified)
 - **v2.4.3** - Header and sidebar UI refinements, improved URL editing, active-only icon controls, bottom toolbar alignment

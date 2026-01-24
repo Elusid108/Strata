@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.5";
+  const APP_VERSION = "2.4.6";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -399,7 +399,7 @@
       )
   }
 
-  const ContentBlock = ({ html, tagName, className, placeholder, onChange, onInsertBelow, onInsertTextBelow, onExitList, blockId, autoFocusId, onFocus, onConvert }) => {
+  const ContentBlock = ({ html, tagName, className, placeholder, onChange, onInsertBelow, onInsertTextBelow, onExitList, blockId, autoFocusId, onFocus, onConvert, onDelete, isLastBlock }) => {
       const contentEditableRef = useRef(null);
       const isLocked = useRef(false); 
       const initialHtml = useRef(html);
@@ -459,6 +459,10 @@
 
       const selectSlashCommand = (cmd) => {
           setSlashMenu({ open: false, filter: '', selectedIndex: 0, position: { top: 0, left: 0 } });
+          // Clear the contentEditable content before converting to ensure slash command text is removed
+          if (contentEditableRef.current) {
+              contentEditableRef.current.innerHTML = '';
+          }
           onConvert(cmd.type);
       };
 
@@ -518,6 +522,8 @@
                       const matchedCmd = SLASH_COMMANDS.find(c => c.aliases.includes(cmd));
                       if (matchedCmd) {
                           e.preventDefault();
+                          // Clear the contentEditable content before converting
+                          contentEditableRef.current.innerHTML = '';
                           onConvert(matchedCmd.type);
                           return;
                       }
@@ -600,6 +606,25 @@
                   default: break;
               }
           }
+          
+          // Handle Backspace in empty blocks
+          if (e.key === 'Backspace') {
+              const text = contentEditableRef.current?.innerText?.trim() || '';
+              if (text === '') {
+                  // Empty block
+                  if (tagName === 'div') {
+                      // Text block - delete if not last block
+                      if (!isLastBlock && onDelete) {
+                          e.preventDefault();
+                          onDelete();
+                      }
+                  } else {
+                      // Non-text block (h1, h2, h3, h4, ul, ol) - convert to text
+                      e.preventDefault();
+                      onConvert('text');
+                  }
+              }
+          }
       };
 
       const Tag = tagName;
@@ -645,7 +670,7 @@
       );
   };
 
-  const BlockComponent = ({ block, rowId, colId, onUpdate, onDelete, onInsertBelow, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus }) => {
+  const BlockComponent = ({ block, rowId, colId, onUpdate, onDelete, onInsertBelow, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus, isLastBlock }) => {
       const isTarget = dropTarget && dropTarget.blockId === block.id;
       const indicatorStyle = isTarget ? (() => {
           switch(dropTarget.position) {
@@ -695,6 +720,8 @@
               onChange: (content) => onUpdate({ content }),
               onInsertBelow, blockId: block.id, autoFocusId, onFocus,
               onConvert: handleConvert,
+              onDelete,
+              isLastBlock,
               placeholder: "Type '/' for commands"
           };
 
@@ -727,7 +754,7 @@
                                   <input type="checkbox" checked={block.checked || false} onChange={(e) => onUpdate({ checked: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-500 rounded border-gray-300" />
                               </div>
                               <div className={`flex-1 ${block.checked ? 'line-through text-gray-400' : ''}`}>
-                                  <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" html={block.content} onChange={(content) => onUpdate({ content })} onInsertBelow={() => onInsertBelow('todo')} onInsertTextBelow={() => onInsertBelow('text')} onExitList={() => handleConvert('text')} blockId={block.id} autoFocusId={autoFocusId} onFocus={onFocus} onConvert={handleConvert} placeholder="To-do item" />
+                                  <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" html={block.content} onChange={(content) => onUpdate({ content })} onInsertBelow={() => onInsertBelow('todo')} onInsertTextBelow={() => onInsertBelow('text')} onExitList={() => handleConvert('text')} blockId={block.id} autoFocusId={autoFocusId} onFocus={onFocus} onConvert={handleConvert} onDelete={onDelete} isLastBlock={isLastBlock} placeholder="To-do item" />
                               </div>
                           </div>
                       )}
@@ -2355,20 +2382,49 @@
     };
 
     const insertBlockAfter = (targetBlockId, blockType = 'text') => {
-      if (!activePage) return;
-      const newBlock = { id: generateId(), type: blockType, content: '', url: '', ...(blockType === 'todo' ? { checked: false } : {}) };
-      let newRows = JSON.parse(JSON.stringify(activePage.rows));
-      for (let row of newRows) {
-          for (let col of row.columns) {
-              const index = col.blocks.findIndex(b => b.id === targetBlockId);
-              if (index > -1) {
-                  col.blocks.splice(index + 1, 0, newBlock);
-                  updatePageContent(newRows, true);
-                  setAutoFocusId(newBlock.id);
-                  return;
-              }
-          }
-      }
+      if (!activePageId || !activeTabId || !activeNotebookId) return;
+      const newBlockId = generateId();
+      const newBlock = { id: newBlockId, type: blockType, content: '', url: '', ...(blockType === 'todo' ? { checked: false } : {}) };
+      
+      // Use functional state update to get latest state (avoids stale closure issues)
+      saveToHistory();
+      setData(prevData => {
+        const currentPage = prevData.notebooks
+          .find(nb => nb.id === activeNotebookId)?.tabs
+          .find(t => t.id === activeTabId)?.pages
+          .find(p => p.id === activePageId);
+        
+        if (!currentPage) return prevData;
+        
+        let newRows = JSON.parse(JSON.stringify(currentPage.rows));
+        for (let row of newRows) {
+            for (let col of row.columns) {
+                const index = col.blocks.findIndex(b => b.id === targetBlockId);
+                if (index > -1) {
+                    col.blocks.splice(index + 1, 0, newBlock);
+                    break;
+                }
+            }
+        }
+        
+        return {
+          ...prevData,
+          notebooks: prevData.notebooks.map(nb => 
+            nb.id !== activeNotebookId ? nb : {
+                ...nb,
+                tabs: nb.tabs.map(tab => 
+                    tab.id !== activeTabId ? tab : {
+                        ...tab,
+                        pages: tab.pages.map(page => 
+                            page.id !== activePageId ? page : { ...page, rows: newRows }
+                        )
+                    }
+                )
+            }
+          )
+        };
+      });
+      setAutoFocusId(newBlockId);
     };
 
     const updateBlock = (blockId, updates) => {
@@ -3335,45 +3391,53 @@
                                       <div key={row.id} className="flex gap-4 group/row relative">
                                           {row.columns.map((col) => (
                                               <div key={col.id} className="flex-1 min-w-[50px] space-y-2">
-                                                  {col.blocks.map((block) => (
-                                                      <BlockComponent 
-                                                          key={block.id} block={block} rowId={row.id} colId={col.id}
-                                                          onUpdate={(updates) => updateBlock(block.id, updates)}
-                                                          onDelete={() => removeBlock(block.id)}
-                                                          onInsertBelow={(type) => insertBlockAfter(block.id, type)}
-                                                          autoFocusId={autoFocusId}
-                                                          onRequestFocus={() => setAutoFocusId(block.id)}
-                                                          isSelected={selectedBlockId === block.id}
-                                                          onHandleClick={(e) => handleBlockHandleClick(e, block.id)}
-                                                          onFocus={() => { setSelectedBlockId(null); setBlockMenu(null); setAutoFocusId(null); }}
-                                                          onDragStart={(e) => { e.dataTransfer.setData('block_drag', JSON.stringify({ block, rowId: row.id, colId: col.id })); setDraggedBlock({ block, rowId: row.id, colId: col.id }); }}
-                                                          onDragOver={(e) => {
-                                                              e.preventDefault(); e.stopPropagation();
-                                                              if (!draggedBlock || draggedBlock.block.id === block.id) return;
-                                                              const rect = e.currentTarget.getBoundingClientRect();
-                                                              const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-                                                              const w = rect.width; const h = rect.height;
-                                                              let position = 'bottom';
-                                                              
-                                                              const dLeft = x; const dRight = w - x; const dTop = y; const dBottom = h - y;
-                                                              let minD = dBottom; // Default strict bottom
-                                                              
-                                                              // More balanced sticky logic
-                                                              if (dTop < h * 0.3) { minD = dTop; position = 'top'; }
+                                                  {col.blocks.map((block) => {
+                                                      // Calculate if this is the only block on the page (for backspace behavior)
+                                                      const totalBlocks = activePage.rows.reduce((acc, r) => 
+                                                          acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0);
+                                                      const isLastBlock = totalBlocks === 1;
+                                                      
+                                                      return (
+                                                          <BlockComponent 
+                                                              key={block.id} block={block} rowId={row.id} colId={col.id}
+                                                              onUpdate={(updates) => updateBlock(block.id, updates)}
+                                                              onDelete={() => removeBlock(block.id)}
+                                                              onInsertBelow={(type) => insertBlockAfter(block.id, type)}
+                                                              autoFocusId={autoFocusId}
+                                                              onRequestFocus={() => setAutoFocusId(block.id)}
+                                                              isSelected={selectedBlockId === block.id}
+                                                              onHandleClick={(e) => handleBlockHandleClick(e, block.id)}
+                                                              onFocus={() => { setSelectedBlockId(null); setBlockMenu(null); setAutoFocusId(null); }}
+                                                              onDragStart={(e) => { e.dataTransfer.setData('block_drag', JSON.stringify({ block, rowId: row.id, colId: col.id })); setDraggedBlock({ block, rowId: row.id, colId: col.id }); }}
+                                                              onDragOver={(e) => {
+                                                                  e.preventDefault(); e.stopPropagation();
+                                                                  if (!draggedBlock || draggedBlock.block.id === block.id) return;
+                                                                  const rect = e.currentTarget.getBoundingClientRect();
+                                                                  const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+                                                                  const w = rect.width; const h = rect.height;
+                                                                  let position = 'bottom';
+                                                                  
+                                                                  const dLeft = x; const dRight = w - x; const dTop = y; const dBottom = h - y;
+                                                                  let minD = dBottom; // Default strict bottom
+                                                                  
+                                                                  // More balanced sticky logic
+                                                                  if (dTop < h * 0.3) { minD = dTop; position = 'top'; }
 
-                                                              const targetRow = activePage.rows.find(r => r.id === row.id);
-                                                              const isMaxColumns = targetRow && targetRow.columns.length >= settings.maxColumns;
-                                                              
-                                                              if (!isMaxColumns) {
-                                                                  if (x < w * 0.2) position = 'left';
-                                                                  else if (x > w * 0.8) position = 'right';
-                                                              }
+                                                                  const targetRow = activePage.rows.find(r => r.id === row.id);
+                                                                  const isMaxColumns = targetRow && targetRow.columns.length >= settings.maxColumns;
+                                                                  
+                                                                  if (!isMaxColumns) {
+                                                                      if (x < w * 0.2) position = 'left';
+                                                                      else if (x > w * 0.8) position = 'right';
+                                                                  }
 
-                                                              setDropTarget({ rowId: row.id, colId: col.id, blockId: block.id, position });
-                                                          }}
-                                                          onDrop={handleDrop} dropTarget={dropTarget}
-                                                      />
-                                                  ))}
+                                                                  setDropTarget({ rowId: row.id, colId: col.id, blockId: block.id, position });
+                                                              }}
+                                                              onDrop={handleDrop} dropTarget={dropTarget}
+                                                              isLastBlock={isLastBlock}
+                                                          />
+                                                      );
+                                                  })}
                                               </div>
                                           ))}
                                       </div>
