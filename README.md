@@ -113,6 +113,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.4.3** - Header and sidebar UI refinements, improved URL editing, active-only icon controls, bottom toolbar alignment
 - **v2.4.2** - Session-wide page caching, always-dark sidebar, tab dark mode colors, double-click to edit tab names, new pages start with empty block
 - **v2.4.1** - iOS-style Edit/Preview toggle fix, page caching for faster switching, light mode color fixes, Enter key to finish editing page names
 - **v2.4.0** - Edit/Preview toggle for Google pages, Drive import modal with URL paste, default to Edit mode for embeds

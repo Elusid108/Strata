@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.2";
+  const APP_VERSION = "2.4.3";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -891,6 +891,9 @@
     const [editEmbedUrl, setEditEmbedUrl] = useState('');
     const [editEmbedViewMode, setEditEmbedViewMode] = useState('edit'); // 'edit' or 'preview'
     const [editingEmbedName, setEditingEmbedName] = useState(false);
+    const [inlineUrlValue, setInlineUrlValue] = useState(''); // For inline URL editing in header
+    const [showAccountPopup, setShowAccountPopup] = useState(false); // Hover popup for Google account
+    const [showSignOutConfirm, setShowSignOutConfirm] = useState(false); // Sign out confirmation dialog
     
     // Tab overflow and fish-eye hover state
     const [tabsOverflow, setTabsOverflow] = useState(false);
@@ -2289,6 +2292,71 @@
       showNotification('Page updated', 'success');
     };
 
+    // Handle inline URL change from header bar input
+    const handleInlineUrlChange = (newUrl) => {
+      if (!activePage || !newUrl) return;
+      
+      // Auto-correct URL
+      let url = newUrl.trim();
+      if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+      
+      // Skip if URL hasn't changed
+      if (url === (activePage.originalUrl || activePage.embedUrl)) return;
+      
+      // Calculate new embed URL based on page type (keep current view mode)
+      let newEmbedUrl = activePage.embedUrl;
+      const pageType = activePage.type;
+      const currentViewMode = activePage.embedUrl.includes('/preview') ? 'preview' : 'edit';
+      
+      if (pageType === 'web') {
+        newEmbedUrl = url;
+      } else if (pageType === 'pdf') {
+        const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (driveMatch) {
+          newEmbedUrl = `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+        } else {
+          newEmbedUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(url)}`;
+        }
+      } else if (['doc', 'sheet', 'slide'].includes(pageType)) {
+        const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        if (match) {
+          const docId = match[1];
+          if (pageType === 'doc') {
+            newEmbedUrl = `https://docs.google.com/document/d/${docId}/${currentViewMode}`;
+          } else if (pageType === 'sheet') {
+            newEmbedUrl = `https://docs.google.com/spreadsheets/d/${docId}/${currentViewMode}`;
+          } else if (pageType === 'slide') {
+            newEmbedUrl = `https://docs.google.com/presentation/d/${docId}/${currentViewMode}`;
+          }
+        }
+      }
+      
+      setData(prev => ({
+        ...prev,
+        notebooks: prev.notebooks.map(nb => 
+          nb.id !== activeNotebookId ? nb : {
+            ...nb,
+            tabs: nb.tabs.map(tab => 
+              tab.id !== activeTabId ? tab : {
+                ...tab,
+                pages: tab.pages.map(p => 
+                  p.id !== activePage.id ? p : {
+                    ...p,
+                    embedUrl: newEmbedUrl,
+                    originalUrl: url
+                  }
+                )
+              }
+            )
+          }
+        )
+      }));
+      
+      showNotification('URL updated', 'success');
+    };
+
     const addBlock = (type, initialData = {}) => {
         if (!activePage) return;
         const newBlock = { id: generateId(), type, content: '', url: '', ...initialData };
@@ -2459,7 +2527,32 @@
                  else if (idx > 0) nextId = newData.notebooks[idx - 1].id;
              }
              newData.notebooks = newData.notebooks.filter(n => n.id !== id);
-             if (activeNotebookId === id) setActiveNotebookId(nextId);
+             if (activeNotebookId === id) {
+                 setActiveNotebookId(nextId);
+                 // Also select the appropriate tab and page in the next notebook
+                 if (nextId) {
+                     const nextNb = newData.notebooks.find(n => n.id === nextId);
+                     if (nextNb && nextNb.tabs.length > 0) {
+                         const tabToSelect = nextNb.activeTabId || nextNb.tabs[0]?.id;
+                         if (tabToSelect) {
+                             setActiveTabId(tabToSelect);
+                             const tabObj = nextNb.tabs.find(t => t.id === tabToSelect);
+                             const pageToSelect = tabObj?.activePageId || tabObj?.pages[0]?.id;
+                             if (pageToSelect) setActivePageId(pageToSelect);
+                             else setActivePageId(null);
+                         } else {
+                             setActiveTabId(null);
+                             setActivePageId(null);
+                         }
+                     } else {
+                         setActiveTabId(null);
+                         setActivePageId(null);
+                     }
+                 } else {
+                     setActiveTabId(null);
+                     setActivePageId(null);
+                 }
+             }
         } else {
              for (let nb of newData.notebooks) {
                  if (nb.id !== activeNotebookId) continue;
@@ -2854,8 +2947,9 @@
               <div key={nb.id} className="group flex items-center gap-2" draggable={!editingNotebookId} onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'notebook', index)} title={settings.condensedView ? nb.name : undefined}>
                    <div onClick={() => selectNotebook(nb.id)} className={`flex-1 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-colors ${activeNotebookId === nb.id ? 'bg-gray-800 text-white font-medium' : 'hover:bg-gray-800'}`}>
                       <span 
-                          className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${settings.condensedView ? '' : 'cursor-pointer hover:bg-gray-700'} rounded px-0.5 notebook-icon-trigger`} 
+                          className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${activeNotebookId === nb.id && !settings.condensedView ? 'cursor-pointer hover:bg-gray-700' : ''} rounded px-0.5 notebook-icon-trigger`} 
                           onClick={(e) => { 
+                              if (activeNotebookId !== nb.id) return; // Only active notebook
                               if (settings.condensedView) return; // Don't open picker in condensed view
                               e.stopPropagation(); 
                               const rect = e.currentTarget.getBoundingClientRect();
@@ -2889,57 +2983,15 @@
             ))}
           </div>
           {/* Bottom toolbar */}
-          <div className={`p-2 border-t border-gray-800 flex flex-col gap-2`}>
-              <div className={`flex ${settings.condensedView ? 'flex-col gap-1' : 'justify-center gap-2'}`}>
-                  <button onClick={() => setSettings(s => ({...s, condensedView: !s.condensedView}))} className="hover:bg-gray-800 p-2 rounded transition-colors" title={settings.condensedView ? "Expand view" : "Compact view"}>
-                      {settings.condensedView ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
-                  </button>
-                  <button onClick={() => setShowSettings(true)} className="hover:bg-gray-800 p-2 rounded transition-colors settings-trigger" title="Settings">
-                      <Settings size={18} />
-                  </button>
+          <div className={`p-2 border-t border-gray-800 flex items-center justify-between`}>
+              <button onClick={() => setSettings(s => ({...s, condensedView: !s.condensedView}))} className="hover:bg-gray-800 p-2 rounded transition-colors" title={settings.condensedView ? "Expand view" : "Compact view"}>
+                  {settings.condensedView ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+              </button>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <span>v{APP_VERSION}</span>
+                  {isSyncing && <span className="text-blue-400 animate-pulse">⟳</span>}
+                  {lastSyncTime && !isSyncing && <span className="text-green-500">✓ Synced</span>}
               </div>
-              
-              {/* Google Drive Authentication */}
-              {!settings.condensedView && (
-                  <div className="border-t border-gray-700 pt-2">
-                      {isLoadingAuth ? (
-                          <div className="text-xs text-gray-500 text-center">Loading...</div>
-                      ) : isAuthenticated ? (
-                          <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-700 rounded">
-                                  <GoogleG size={14} />
-                                  <span className="text-xs text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
-                                  {isSyncing && (
-                                      <span className="text-xs text-blue-400 animate-pulse" title="Syncing with Drive...">⟳</span>
-                                  )}
-                              </div>
-                              <div className="flex items-center justify-between text-xs px-1">
-                                  <button onClick={handleSignOut} className="text-red-400 hover:text-red-300">
-                                      Sign Out
-                                  </button>
-                                  <span className="text-gray-600">v{APP_VERSION}</span>
-                                  {lastSyncTime && (
-                                      <span className="text-green-500" title={`Last synced: ${new Date(lastSyncTime).toLocaleTimeString()}`}>
-                                          ✓ Synced
-                                      </span>
-                                  )}
-                              </div>
-                          </div>
-                      ) : (
-                          <div className="flex flex-col gap-1">
-                              <button 
-                                  onClick={handleSignIn} 
-                                  className="w-full flex items-center gap-2 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-                                  disabled={typeof GoogleAPI === 'undefined'}
-                              >
-                                  <GoogleG size={14} />
-                                  Sign in with Google
-                              </button>
-                              <span className="text-xs text-gray-600 text-center">v{APP_VERSION}</span>
-                          </div>
-                      )}
-                  </div>
-              )}
           </div>
         </div>
 
@@ -2971,13 +3023,14 @@
                  >
                      <div 
                          onClick={() => selectTab(tab.id)} 
-                         className={`${isCondensedMode ? 'px-2' : (settings.condensedView ? 'px-2' : 'px-4')} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 border-t border-l border-r border-transparent overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm !border-gray-300 -translate-y-[2px]` : `${getTabColorClasses(tab.color, false)}`}`} 
+                         className={`${isCondensedMode ? 'px-2' : (settings.condensedView ? 'px-2' : 'px-4')} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 tab-gloss overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm -translate-y-[2px]` : `${getTabColorClasses(tab.color, false)}`}`} 
                          title={(!showName || settings.condensedView) ? tab.name : undefined}
                      >
                       <span 
-                          className={`text-sm flex-shrink-0 ${(!tabsOverflow && !settings.condensedView) || showDetails ? 'cursor-pointer hover:bg-black/10' : ''} rounded px-0.5 tab-icon-trigger`} 
+                          className={`text-sm flex-shrink-0 ${activeTabId === tab.id && ((!tabsOverflow && !settings.condensedView) || showDetails) ? 'cursor-pointer hover:bg-black/10' : ''} rounded px-0.5 tab-icon-trigger`} 
                           onClick={(e) => { 
-                              // Only allow icon change when not in condensed mode and tab is expanded (showDetails)
+                              // Only allow icon change on active tab, when not in condensed mode and tab is expanded (showDetails)
+                              if (activeTabId !== tab.id) return;
                               if (settings.condensedView || (tabsOverflow && !showDetails)) return;
                               e.stopPropagation(); 
                               const rect = e.currentTarget.getBoundingClientRect();
@@ -3005,8 +3058,8 @@
                       ) : (
                           <span className="truncate font-medium flex-1 min-w-0" onDoubleClick={(e) => { if(activeTabId === tab.id && showDetails) { e.stopPropagation(); setEditingTabId(tab.id); } }}>{tab.name}</span>
                       ))}
-                       {showDetails && !settings.condensedView && <div className="relative ml-auto flex-shrink-0">
-                          <button className={`p-1 rounded hover:bg-black/10 tab-settings-trigger ${activeTabId === tab.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} onClick={(e) => {
+                       {showDetails && !settings.condensedView && activeTabId === tab.id && <div className="relative ml-auto flex-shrink-0">
+                          <button className="p-1 rounded hover:bg-black/10 tab-settings-trigger opacity-100" onClick={(e) => {
                                   e.stopPropagation();
                                   if (activeTabMenu?.id === tab.id) setActiveTabMenu(null);
                                   else { const rect = e.currentTarget.getBoundingClientRect(); setActiveTabMenu({ id: tab.id, top: rect.bottom + 5, left: rect.left }); }
@@ -3020,6 +3073,42 @@
                })}
                </div>
                <button onClick={addTab} className="mb-2 ml-1 p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors flex-shrink-0"><Plus size={18}/></button>
+               {/* Header right section */}
+               <div className="ml-auto flex items-center gap-2 h-full flex-shrink-0">
+                   {isLoadingAuth ? (
+                       <span className="text-xs text-gray-500">Loading...</span>
+                   ) : isAuthenticated ? (
+                       <div 
+                           className="relative h-full flex items-center"
+                           onMouseEnter={() => setShowAccountPopup(true)}
+                           onMouseLeave={() => setShowAccountPopup(false)}
+                       >
+                           <div 
+                               className="flex items-center justify-center gap-2 h-10 px-4 bg-gray-200 dark:bg-gray-700 rounded cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                               onClick={() => setShowSignOutConfirm(true)}
+                           >
+                               <GoogleG size={16} />
+                               <span className="text-sm text-gray-700 dark:text-gray-200 truncate max-w-40">{userName || userEmail}</span>
+                           </div>
+                           
+                           {/* Hover Popup */}
+                           {showAccountPopup && (
+                               <div className="absolute top-full right-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-3 text-center min-w-48 z-50 animate-fade-in">
+                                   <div className="font-medium text-gray-800 dark:text-gray-200">{userName}</div>
+                                   <div className="text-xs text-gray-500 dark:text-gray-400">{userEmail}</div>
+                                   <div className="text-xs text-red-500 mt-2">Click to sign out</div>
+                               </div>
+                           )}
+                       </div>
+                   ) : (
+                       <button onClick={handleSignIn} className="flex items-center gap-2 h-10 px-4 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors" disabled={typeof GoogleAPI === 'undefined'}>
+                           <GoogleG size={16} /> Sign in with Google
+                       </button>
+                   )}
+                   <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400 settings-trigger transition-colors" title="Settings">
+                       <Settings size={20} />
+                   </button>
+               </div>
              </div>
           ) : (
               <div className="h-12 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-center px-4 text-gray-500 dark:text-gray-400">Select a notebook</div>
@@ -3085,13 +3174,6 @@
                                       </span>
                                   )}
                                   <button 
-                                      onClick={openEditEmbed}
-                                      className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-400 hover:text-gray-600"
-                                      title="Edit page settings"
-                                  >
-                                      <Edit3 size={16} />
-                                  </button>
-                                  <button 
                                       onClick={() => toggleStar(activePage.id, activeNotebookId, activeTabId)}
                                       className={`p-1.5 rounded transition-colors ${activePage.starred ? 'text-yellow-400 hover:bg-yellow-50' : 'text-gray-300 hover:text-yellow-400 hover:bg-gray-100'}`}
                                       title={activePage.starred ? 'Remove from favorites' : 'Add to favorites'}
@@ -3117,6 +3199,28 @@
                                           <span className={`text-xs font-medium transition-colors ${activePage.embedUrl.includes('/preview') ? 'text-gray-600' : 'text-gray-400'}`}>Preview</span>
                                       </div>
                                   )}
+                                  {/* URL Field */}
+                                  <div className="flex items-center gap-1 ml-2">
+                                      <span className="text-xs text-gray-400">URL:</span>
+                                      <input 
+                                          type="text"
+                                          className="text-xs text-blue-500 dark:text-blue-400 bg-transparent border-b border-transparent hover:border-blue-300 focus:border-blue-500 focus:outline-none px-1 py-0.5 w-48"
+                                          defaultValue={activePage.originalUrl || activePage.embedUrl || ''}
+                                          key={activePage.id}
+                                          onFocus={(e) => setInlineUrlValue(e.target.value)}
+                                          onBlur={(e) => {
+                                              if (e.target.value !== (activePage.originalUrl || activePage.embedUrl)) {
+                                                  handleInlineUrlChange(e.target.value);
+                                              }
+                                          }}
+                                          onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                  e.target.blur();
+                                              }
+                                          }}
+                                          title={activePage.originalUrl || activePage.embedUrl}
+                                      />
+                                  </div>
                                   <span className="text-xs text-gray-400 ml-auto">
                                       {activePage.type === 'doc' ? 'Google Docs' : 
                                        activePage.type === 'sheet' ? 'Google Sheets' : 
@@ -3337,8 +3441,8 @@
                                   ))}
                               </div>
                               
-                              <div className="mt-12 pb-20 opacity-30 hover:opacity-50 transition-opacity">
-                                <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-gray-400">
+                              <div className="mt-12 pb-20 opacity-50 hover:opacity-70 transition-opacity">
+                                <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                                     {[
                                         { cmd: '/h1', desc: 'heading' },
                                         { cmd: '/h2', desc: 'subheading' },
@@ -3353,7 +3457,7 @@
                                     ].map(c => (
                                         <span key={c.cmd} className="whitespace-nowrap">
                                             <span className="font-mono font-medium">{c.cmd}</span>
-                                            <span className="text-gray-300 ml-1">{c.desc}</span>
+                                            <span className="text-gray-400 dark:text-gray-500 ml-1">{c.desc}</span>
                                         </span>
                                     ))}
                                 </div>
@@ -3877,6 +3981,30 @@
               </div>
           )}
 
+          {/* Sign Out Confirmation Dialog */}
+          {showSignOutConfirm && (
+              <div className="fixed inset-0 bg-black/50 z-[10001] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 animate-fade-in max-w-sm w-full">
+                      <h3 className="font-bold text-lg mb-2 dark:text-white">Sign out of Google?</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Your data will remain synced. You can sign back in anytime.</p>
+                      <div className="flex gap-3 justify-end">
+                          <button 
+                              onClick={() => setShowSignOutConfirm(false)} 
+                              className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={() => { handleSignOut(); setShowSignOutConfirm(false); }} 
+                              className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                          >
+                              Yes, Sign Out
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+
           {showSettings && (
               <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in settings-modal">
@@ -3927,22 +4055,6 @@
                               <span className="w-8 text-center font-bold text-lg dark:text-white">{settings.maxColumns}</span>
                           </div>
                           <p className="text-xs text-gray-400 mt-1">Controls how many columns you can create when dragging blocks side-by-side</p>
-                      </div>
-
-                      {/* Condensed View */}
-                      <div className="mb-6">
-                          <label className="flex items-center justify-between cursor-pointer">
-                              <span className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                  <Minimize2 size={16} /> Condensed View
-                              </span>
-                              <div 
-                                  onClick={() => setSettings(s => ({ ...s, condensedView: !s.condensedView }))}
-                                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${settings.condensedView ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                              >
-                                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${settings.condensedView ? 'translate-x-7' : 'translate-x-1'}`}></div>
-                              </div>
-                          </label>
-                          <p className="text-xs text-gray-400 mt-1">Shrinks sidebars and hides labels for more content space</p>
                       </div>
 
                       <div className="border-t dark:border-gray-700 pt-4">
