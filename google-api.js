@@ -260,10 +260,12 @@ const getAppDataFile = async () => {
         const response = await gapi.client.drive.files.list({
             q: "name='strata_manifest.json' and 'appDataFolder' in parents",
             spaces: 'appDataFolder',
-            fields: 'files(id, name, modifiedTime)'
+            fields: 'files(id, name, modifiedTime)',
+            orderBy: 'modifiedTime desc'
         });
 
         if (response.result.files && response.result.files.length > 0) {
+            // Always use the most recently modified file (first after orderBy desc)
             const fileId = response.result.files[0].id;
             const fileResponse = await gapi.client.drive.files.get({
                 fileId: fileId,
@@ -324,17 +326,19 @@ const updateAppDataFile = async (content) => {
     try {
         await ensureAuthenticated();
 
-        // First, get the file ID
+        // First, get the file ID (use most recently modified if duplicates exist)
         const listResponse = await gapi.client.drive.files.list({
             q: "name='strata_manifest.json' and 'appDataFolder' in parents",
             spaces: 'appDataFolder',
-            fields: 'files(id)'
+            fields: 'files(id, modifiedTime)',
+            orderBy: 'modifiedTime desc'
         });
 
         if (!listResponse.result.files || listResponse.result.files.length === 0) {
             return await createAppDataFile(content);
         }
 
+        // Always use the most recently modified file
         const fileId = listResponse.result.files[0].id;
 
         // Update the file

@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.3";
+  const APP_VERSION = "2.4.4";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -313,9 +313,16 @@
   ];
 
   const BG_COLORS = {
-      gray: 'bg-gray-100', red: 'bg-red-100', orange: 'bg-orange-100', amber: 'bg-amber-100',
-      green: 'bg-green-100', teal: 'bg-teal-100', blue: 'bg-blue-100', indigo: 'bg-indigo-100',
-      purple: 'bg-purple-100', pink: 'bg-pink-100',
+      gray: 'bg-gray-100 dark:bg-gray-700',
+      red: 'bg-red-100 dark:bg-red-900',
+      orange: 'bg-orange-100 dark:bg-orange-900',
+      amber: 'bg-amber-100 dark:bg-amber-900',
+      green: 'bg-green-100 dark:bg-green-900',
+      teal: 'bg-teal-100 dark:bg-teal-900',
+      blue: 'bg-blue-100 dark:bg-blue-900',
+      indigo: 'bg-indigo-100 dark:bg-indigo-900',
+      purple: 'bg-purple-100 dark:bg-purple-900',
+      pink: 'bg-pink-100 dark:bg-pink-900',
   };
 
   const EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🤭", "🤫", "🤥", "😶", "😐", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😵", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️", "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾", "👋", "🤚", "🖐", "✋", "🖖", "👌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🦷", "🦴", "👀", "👁", "👅", "👄", "👶", "🧒", "👦", "👧", "🧑", "👱", "👨", "🧔", "👨‍🦰", "👨‍🦱", "👨‍🦳", "👨‍🦲", "👩", "👩‍🦰", "👩‍🦱", "👩‍🦳", "👩‍🦲", "👱‍♀️", "👱‍♂️", "🧓", "👴", "👵", "🙍", "🙍‍♂️", "🙍‍♀️", "🙎", "🙎‍♂️", "🙎‍♀️", "🙅", "🙅‍♂️", "🙅‍♀️", "🙆", "🙆‍♂️", "🙆‍♀️", "💁", "💁‍♂️", "💁‍♀️", "🙋", "🙋‍♂️", "🙋‍♀️", "🧏", "🧏‍♂️", "🧏‍♀️", "🙇", "🙇‍♂️", "🙇‍♀️", "🤦", "🤦‍♂️", "🤦‍♀️", "🤷", "🤷‍♂️", "🤷‍♀️", "🧑‍⚕️", "👨‍⚕️", "👩‍⚕️", "🧑‍🎓", "👨‍🎓", "👩‍🎓", "🧑‍🏫", "👨‍🏫", "👩‍🏫", "🧑‍⚖️", "👨‍⚖️", "👩‍⚖️", "🧑‍🌾", "👨‍🌾", "👩‍🌾", "🧑‍🍳", "👨‍🍳", "👩‍🍳", "🧑‍🔧", "👨‍🔧", "👩‍🔧", "🧑‍🏭", "👨‍🏭", "👩‍🏭", "🧑‍💼", "👨‍💼", "👩‍💼", "🧑‍🔬", "👨‍🔬", "👩‍🔬", "🧑‍💻", "👨‍💻", "👩‍💻", "🧑‍🎤", "👨‍🎤", "👩‍🎤", "🧑‍🎨", "👨‍🎨", "👩‍🎨", "🧑‍✈️", "👨‍✈️", "👩‍✈️", "🧑‍🚀", "👨‍🚀", "👩‍🚀", "🧑‍🚒", "👨‍🚒", "👩‍🚒", "👮", "👮‍♂️", "👮‍♀️", "🕵", "🕵‍♂️", "🕵‍♀️", "💂", "💂‍♂️", "💂‍♀️", "👷", "👷‍♂️", "👷‍♀️", "🤴", "👸", "👳", "👳‍♂️", "👳‍♀️", "👲", "🧕", "🤵", "🤵‍♂️", "🤵‍♀️", "👰", "👰‍♂️", "👰‍♀️", "🤰", "🤱", "👩‍🍼", "👨‍🍼", "🧑‍🍼", "👼", "🎅", "🤶", "🧑‍🎄", "🦸", "🦸‍♂️", "🦸‍♀️", "🦹", "🦹‍♂️", "🦹‍♀️", "🧙", "🧙‍♂️", "🧙‍♀️", "🧚", "🧚‍♂️", "🧚‍♀️", "🧛", "🧛‍♂️", "🧛‍♀️", "🧜", "🧜‍♂️", "🧜‍♀️", "🧝", "🧝‍♂️", "🧝‍♀️", "🧞", "🧞‍♂️", "🧞‍♀️", "🧟", "🧟‍♂️", "🧟‍♀️", "💆", "💆‍♂️", "💆‍♀️", "💇", "💇‍♂️", "💇‍♀️", "🚶", "🚶‍♂️", "🚶‍♀️", "🧍", "🧍‍♂️", "🧍‍♀️", "🧎", "🧎‍♂️", "🧎‍♀️", "🧑‍🦯", "👨‍🦯", "👩‍🦯", "🧑‍🦼", "👨‍🦼", "👩‍🦼", "🧑‍🦽", "👨‍🦽", "👩‍🦽", "🏃", "🏃‍♂️", "🏃‍♀️", "💃", "🕺", "🕴", "👯", "👯‍♂️", "👯‍♀️", "🧖", "🧖‍♂️", "🧖‍♀️", "🧗", "🧗‍♂️", "🧗‍♀️", "🤺", "🏇", "⛷", "🏂", "🏌", "🏌‍♂️", "🏌‍♀️", "🏄", "🏄‍♂️", "🏄‍♀️", "🚣", "🚣‍♂️", "🚣‍♀️", "🏊", "🏊‍♂️", "🏊‍♀️", "⛹", "⛹‍♂️", "⛹‍♀️", "🏋", "🏋‍♂️", "🏋‍♀️", "🚴", "🚴‍♂️", "🚴‍♀️", "🚵", "🚵‍♂️", "🚵‍♀️", "🤸", "🤸‍♂️", "🤸‍♀️", "🤼", "🤼‍♂️", "🤼‍♀️", "🤽", "🤽‍♂️", "🤽‍♀️", "🤾", "🤾‍♂️", "🤾‍♀️", "🤹", "🤹‍♂️", "🤹‍♀️", "🧘", "🧘‍♂️", "🧘‍♀️", "🛀", "🛌", "📄", "📁", "📂", "💼", "📝", "🗓", "📅", "📇", "📉", "📈", "📊", "📋", "📌", "📍", "📎", "📏", "📐", "✂️", "🗂", "🗃", "🗄", "🗑", "🔒", "🔓", "🔏", "🔐", "🔑", "🗝", "🔨", "🪓", "⛏", "🔧", "🔩", "🧱", "⚙️", "🗜", "⚖️", "🔗", "⛓", "🧰", "🧲", "🪜", "🩸", "💉", "💊", "🩹", "🩺", "🔭", "🔬", "🦠", "🧬", "🧪", "🧫", "🧹", "🧺", "🧻", "🚽", "🚰", "🚿", "🛁", "🧼", "🪥", "🪒", "🧽", "🪣", "🧴", "🪞", "🪟", "🛏", "🛋", "🪑", "🚪", "🛎", "🖼", "🧭", "🗺", "⛱", "🗿", "🛍", "🛒", "👓", "🕶", "🥽", "🥼", "🦺", "👔", "👕", "👖", "🧣", "🧤", "🧥", "🧦", "👗", "👘", "🥻", "🩱", "🩲", "🩳", "👙", "👚", "👛", "👜", "👝", "🎒", "🎒", "👞", "👟", "🥾", "🥿", "👠", "👡", "🩰", "👢", "👑", "👒", "🎩", "🎓", "🧢", "⛑", "🪖", "💄", "💍", "💎", "🔇", "🔈", "🔉", "🔊", "📢", "📣", "📯", "🔔", "🔕", "🎼", "🎵", "🎶", "🎙", "🎚", "🎛", "🎤", "🎧", "📻", "🎷", "🪗", "🎸", "🎹", "🎺", "🎻", "🪕", "🥁", "🥁", "📱", "📲", "☎️", "📞", "📟", "📠", "🔋", "🔌", "💻", "🖥", "🖨", "⌨️", "🖱", "🖲", "💽", "💾", "💿", "📀", "🧮", "🎥", "🎞", "📽", "🎬", "📺", "📷", "📸", "📹", "📼", "🔍", "🔎", "🕯", "💡", "🔦", "🏮", "🪔", "📔", "📕", "📖", "📗", "📘", "📙", "📚", "📓", "📒", "📃", "📜", "📄", "📰", "🗞", "📑", "🔖", "🏷", "💰", "🪙", "💴", "💵", "💶", "💷", "💸", "💳", "🧾", "✉️", "✉️", "📧", "📨", "📩", "📤", "📥", "📦", "📫", "📪", "📬", "📭", "📮", "🗳", "✏️", "✒️", "🖋", "🖊", "🖌", "🖍", "📝", "💼", "📁", "📂", "🗂", "📅", "📆", "🗒", "🗓", "📇", "📈", "📉", "📊", "📋", "📌", "📍", "📎", "🖇", "📏", "📐", "✂️", "🗃", "🗄", "🗑", "🔒", "🔓", "🔏", "🔐", "🔑", "🗝", "🔨", "🪓", "⛏", "🔧", "🔩", "🧱", "⚙️", "🗜", "⚖️", "🔗", "⛓", "🧰", "🧲", "🪜", "⚗️", "🔭", "🔬", "🕳", "🩹", "🩺", "💊", "💉", "🩸", "🧬", "🦠", "🧫", "🧪", "🌡", "🧹", "🪠", "🧺", "🧻", "🚽", "🚰", "🚿", "🛁", "🛀", "🧼", "🪥", "🪒", "🧽", "🪣", "🧴", "🛎", "🔑", "🗝", "🚪", "🪑", "🛋", "🛏", "🛌", "🧸", "🪆", "🖼", "🪞", "🪟", "🛍", "🛒", "🎁", "🎈", "🎏", "🎀", "🪄", "🪅", "🎊", "🎉", "🎎", "🏮", "🎐", "🧧", "✉️", "📩", "📨", "📧", "💌", "📥", "📤", "📦", "🏷", "🪧", "📪", "📫", "📬", "📭", "📮", "📯", "📜", "📃", "📄", "📑", "🧾", "📊", "📈", "📉", "🗒", "🗓", "📆", "📅", "🗑", "📇", "🗃", "🗳", "🗄", "📋", "📁", "📂", "🗂", "🗞", "📰", "📓", "📔", "📒", "📕", "📗", "📘", "📙", "📚", "📖", "🔖", "🔗", "📎", "🖇", "📐", "📏", "🧮", "📌", "📍", "✂️", "🖊", "🖋", "✒️", "🖌", "🖍", "📝", "✏️", "🔍", "🔎", "🔏", "🔐", "🔒", "🔓"];
@@ -895,9 +902,6 @@
     const [showAccountPopup, setShowAccountPopup] = useState(false); // Hover popup for Google account
     const [showSignOutConfirm, setShowSignOutConfirm] = useState(false); // Sign out confirmation dialog
     
-    // Tab overflow and fish-eye hover state
-    const [tabsOverflow, setTabsOverflow] = useState(false);
-    const [hoveredTabId, setHoveredTabId] = useState(null);
     const tabBarRef = useRef(null);
 
     // Google Drive authentication state
@@ -1530,30 +1534,6 @@
     // The notebook is now the "master" - it only PUSHES changes to Drive.
     // This eliminates the "bounce" effect where changes would sync back and forth.
     // Multi-user collaboration can be added later as a separate feature.
-
-    // Detect tab bar overflow for fish-eye effect
-    // Uses calculated full-width requirement to avoid feedback loop
-    useEffect(() => {
-        const checkOverflow = () => {
-            if (tabBarRef.current) {
-                const containerWidth = tabBarRef.current.clientWidth;
-                const notebook = data.notebooks.find(nb => nb.id === activeNotebookId);
-                const tabCount = notebook?.tabs?.length || 0;
-                // Calculate what width would be needed at full tab width
-                const fullTabWidth = 140; // Average full tab width
-                const addButtonWidth = 50; // + button width with margin
-                const spacing = tabCount * 4; // space-x-1 = 4px per gap
-                const padding = 16; // Container padding
-                const safetyMargin = 40; // Buffer to catch overflow BEFORE + goes off-screen
-                const requiredWidth = (tabCount * fullTabWidth) + addButtonWidth + spacing + padding + safetyMargin;
-                setTabsOverflow(requiredWidth > containerWidth);
-            }
-        };
-        // Use RAF to ensure DOM is updated before measuring
-        requestAnimationFrame(checkOverflow);
-        window.addEventListener('resize', checkOverflow);
-        return () => window.removeEventListener('resize', checkOverflow);
-    }, [data, activeNotebookId, settings.condensedView]);
 
     useEffect(() => {
       const handleClickOutside = (e) => {
@@ -2766,76 +2746,6 @@
         return isActive ? activeColors[colorName] : colors[colorName];
     };
 
-    // Calculate tab width for fish-eye effect when tabs overflow
-    const getTabStyle = (tabId, tabIndex, allTabs) => {
-        // If not overflowing or in condensed view, use normal sizing
-        if (!tabsOverflow || settings.condensedView) {
-            return { 
-                minWidth: settings.condensedView ? '50px' : '120px', 
-                maxWidth: settings.condensedView ? '80px' : '200px',
-                width: 'auto'
-            };
-        }
-        
-        // Calculate available space and dynamic widths
-        const containerWidth = tabBarRef.current?.clientWidth || 800;
-        const tabCount = allTabs.length;
-        const addButtonWidth = 40;
-        const gaps = tabCount * 4; // space-x-1
-        const padding = 16;
-        const availableForTabs = containerWidth - addButtonWidth - gaps - padding;
-        
-        // Calculate base width that fits all tabs (minimum 44px for icon)
-        const baseWidth = Math.max(44, Math.min(120, Math.floor(availableForTabs / tabCount)));
-        
-        // Use hovered tab OR active tab as the "expanded" one
-        const expandedTabId = hoveredTabId || activeTabId;
-        
-        // If no expanded tab, all tabs at calculated base width
-        if (!expandedTabId) {
-            return { width: `${baseWidth}px`, minWidth: `${baseWidth}px`, maxWidth: `${baseWidth}px` };
-        }
-        
-        // Fish-eye effect: expanded tab gets more space
-        const expandedIndex = allTabs.findIndex(t => t.id === expandedTabId);
-        const distance = Math.abs(tabIndex - expandedIndex);
-        
-        // Calculate expanded width (take extra from other tabs)
-        const extraForExpanded = Math.min(60, availableForTabs * 0.15);
-        const fullWidth = Math.min(180, baseWidth + extraForExpanded);
-        const nearWidth = Math.max(44, baseWidth - 10);
-        
-        if (distance === 0) {
-            return { width: `${fullWidth}px`, minWidth: `${fullWidth}px`, maxWidth: `${fullWidth}px` };
-        }
-        if (distance === 1) {
-            return { width: `${nearWidth}px`, minWidth: `${nearWidth}px`, maxWidth: `${nearWidth}px` };
-        }
-        return { width: `${baseWidth}px`, minWidth: `${baseWidth}px`, maxWidth: `${baseWidth}px` };
-    };
-
-    // Determine if tab should show full details (name, settings icon)
-    const shouldShowTabDetails = (tabId, tabIndex, allTabs) => {
-        if (!tabsOverflow || settings.condensedView) return !settings.condensedView;
-        // Use hovered OR active tab as expanded
-        const expandedTabId = hoveredTabId || activeTabId;
-        if (!expandedTabId) return false;
-        const expandedIndex = allTabs.findIndex(t => t.id === expandedTabId);
-        const distance = Math.abs(tabIndex - expandedIndex);
-        return distance === 0; // Only show full details on expanded tab
-    };
-
-    // Determine if tab name should be partially visible (truncated)
-    const shouldShowTabName = (tabId, tabIndex, allTabs) => {
-        if (!tabsOverflow || settings.condensedView) return !settings.condensedView;
-        // Use hovered OR active tab as expanded
-        const expandedTabId = hoveredTabId || activeTabId;
-        if (!expandedTabId) return false;
-        const expandedIndex = allTabs.findIndex(t => t.id === expandedTabId);
-        const distance = Math.abs(tabIndex - expandedIndex);
-        return distance <= 1; // Show name on expanded and immediate neighbors
-    };
-
     const getPageBgClass = (colorName) => {
          const map = {
             gray: 'bg-gray-100 dark:bg-gray-800',
@@ -2987,11 +2897,13 @@
               <button onClick={() => setSettings(s => ({...s, condensedView: !s.condensedView}))} className="hover:bg-gray-800 p-2 rounded transition-colors" title={settings.condensedView ? "Expand view" : "Compact view"}>
                   {settings.condensedView ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
               </button>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <span>v{APP_VERSION}</span>
-                  {isSyncing && <span className="text-blue-400 animate-pulse">⟳</span>}
-                  {lastSyncTime && !isSyncing && <span className="text-green-500">✓ Synced</span>}
-              </div>
+{!settings.condensedView && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>v{APP_VERSION}</span>
+                      {isSyncing && <span className="text-blue-400 animate-pulse">⟳</span>}
+                      {lastSyncTime && !isSyncing && <span className="text-green-500">✓ Synced</span>}
+                  </div>
+              )}
           </div>
         </div>
 
@@ -3000,38 +2912,28 @@
           {activeNotebook ? (
                <div 
                    ref={tabBarRef}
-                   className={`h-12 flex-shrink-0 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-end px-2 ${tabsOverflow ? 'overflow-hidden' : 'overflow-x-auto no-scrollbar'}`}
-                   onMouseLeave={() => setHoveredTabId(null)}
+                   className="h-12 flex-shrink-0 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-end px-2 overflow-x-auto no-scrollbar"
                >
-               <div className={`flex items-end space-x-1 ${tabsOverflow ? 'flex-1 min-w-0' : ''}`}>
-               {activeNotebook.tabs.map((tab, index) => {
-                 const tabStyle = getTabStyle(tab.id, index, activeNotebook.tabs);
-                 const showName = shouldShowTabName(tab.id, index, activeNotebook.tabs);
-                 const showDetails = shouldShowTabDetails(tab.id, index, activeNotebook.tabs);
-                 const isCondensedMode = tabsOverflow && !settings.condensedView;
-                 
-                 return (
+               <div className="flex items-end space-x-1">
+               {activeNotebook.tabs.map((tab, index) => (
                  <div 
                      key={tab.id} 
-                     className="group relative tab-fish-eye flex-shrink-0" 
-                     style={tabStyle}
+                     className="group relative flex-shrink-0" 
                      draggable={!editingTabId} 
                      onDragStart={(e) => handleNavDragStart(e, 'tab', tab.id, index)} 
                      onDragOver={(e) => e.preventDefault()} 
                      onDrop={(e) => handleNavDrop(e, 'tab', index)}
-                     onMouseEnter={() => tabsOverflow && setHoveredTabId(tab.id)}
                  >
                      <div 
                          onClick={() => selectTab(tab.id)} 
-                         className={`${isCondensedMode ? 'px-2' : (settings.condensedView ? 'px-2' : 'px-4')} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 tab-gloss overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm -translate-y-[2px]` : `${getTabColorClasses(tab.color, false)}`}`} 
-                         title={(!showName || settings.condensedView) ? tab.name : undefined}
+                         className={`${settings.condensedView ? 'px-2' : 'px-4'} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 tab-gloss overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm -mb-px` : `${getTabColorClasses(tab.color, false)}`}`} 
+                         title={settings.condensedView ? tab.name : undefined}
                      >
                       <span 
-                          className={`text-sm flex-shrink-0 ${activeTabId === tab.id && ((!tabsOverflow && !settings.condensedView) || showDetails) ? 'cursor-pointer hover:bg-black/10' : ''} rounded px-0.5 tab-icon-trigger`} 
+                          className={`text-sm flex-shrink-0 ${activeTabId === tab.id && !settings.condensedView ? 'cursor-pointer hover:bg-black/10' : ''} rounded px-0.5 tab-icon-trigger`} 
                           onClick={(e) => { 
-                              // Only allow icon change on active tab, when not in condensed mode and tab is expanded (showDetails)
                               if (activeTabId !== tab.id) return;
-                              if (settings.condensedView || (tabsOverflow && !showDetails)) return;
+                              if (settings.condensedView) return;
                               e.stopPropagation(); 
                               const rect = e.currentTarget.getBoundingClientRect();
                               setTabIconPicker({ id: tab.id, top: rect.bottom + 5, left: rect.left });
@@ -3039,7 +2941,7 @@
                       >
                           {tab.icon || '📋'}
                       </span>
-                      {showName && !settings.condensedView && (activeTabId === tab.id && editingTabId === tab.id ? (
+                      {!settings.condensedView && (activeTabId === tab.id && editingTabId === tab.id ? (
                           <input ref={(el) => tabInputRefs.current[tab.id] = el} className="bg-transparent border-none outline-none w-full font-medium tab-input min-w-0" value={tab.name} onChange={(e) => updateLocalName('tab', tab.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('tab', tab.id); if (!creationFlow) setEditingTabId(null); }} onKeyDown={(e) => { 
                               if(e.key === 'Enter') {
                                   e.preventDefault();
@@ -3056,9 +2958,9 @@
                               e.stopPropagation(); 
                           }} onClick={(e) => e.stopPropagation()} />
                       ) : (
-                          <span className="truncate font-medium flex-1 min-w-0" onDoubleClick={(e) => { if(activeTabId === tab.id && showDetails) { e.stopPropagation(); setEditingTabId(tab.id); } }}>{tab.name}</span>
+                          <span className="truncate font-medium flex-1 min-w-0" onDoubleClick={(e) => { if(activeTabId === tab.id) { e.stopPropagation(); setEditingTabId(tab.id); } }}>{tab.name}</span>
                       ))}
-                       {showDetails && !settings.condensedView && activeTabId === tab.id && <div className="relative ml-auto flex-shrink-0">
+                       {!settings.condensedView && activeTabId === tab.id && <div className="relative ml-auto flex-shrink-0">
                           <button className="p-1 rounded hover:bg-black/10 tab-settings-trigger opacity-100" onClick={(e) => {
                                   e.stopPropagation();
                                   if (activeTabMenu?.id === tab.id) setActiveTabMenu(null);
@@ -3069,8 +2971,7 @@
                        </div>}
                      </div>
                  </div>
-                 );
-               })}
+               ))}
                </div>
                <button onClick={addTab} className="mb-2 ml-1 p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors flex-shrink-0"><Plus size={18}/></button>
                {/* Header right section */}
@@ -3139,9 +3040,9 @@
                               <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3">
                                   <span className="text-2xl">{activePage.icon}</span>
                                   {editingEmbedName ? (
-                                      <input 
-                                          className="font-semibold text-gray-700 outline-none border-b-2 border-blue-400 bg-transparent"
-                                          value={activePage.name}
+                                    <input 
+                                        className="font-semibold text-gray-700 outline-none border-b-2 border-blue-400 bg-transparent w-40"
+                                        value={activePage.name}
                                           onChange={(e) => {
                                               setData(prev => ({
                                                   ...prev,
@@ -3165,13 +3066,13 @@
                                           autoFocus
                                       />
                                   ) : (
-                                      <span 
-                                          className="font-semibold text-gray-700 cursor-pointer hover:text-blue-600 transition-colors"
-                                          onClick={() => setEditingEmbedName(true)}
-                                          title="Click to edit name"
-                                      >
-                                          {activePage.name}
-                                      </span>
+                                    <span 
+                                        className="font-semibold text-gray-700 cursor-pointer hover:text-blue-600 transition-colors w-40 truncate"
+                                        onClick={() => setEditingEmbedName(true)}
+                                        title={activePage.name}
+                                    >
+                                        {activePage.name}
+                                    </span>
                                   )}
                                   <button 
                                       onClick={() => toggleStar(activePage.id, activeNotebookId, activeTabId)}
