@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.0";
+  const APP_VERSION = "2.4.1";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -879,6 +879,7 @@
     const [showEditEmbed, setShowEditEmbed] = useState(false);
     const [showDriveImport, setShowDriveImport] = useState(false);
     const [driveImportUrl, setDriveImportUrl] = useState('');
+    const [viewedEmbedPages, setViewedEmbedPages] = useState(new Set());
     const [editEmbedName, setEditEmbedName] = useState('');
     const [editEmbedUrl, setEditEmbedUrl] = useState('');
     const [editEmbedViewMode, setEditEmbedViewMode] = useState('edit'); // 'edit' or 'preview'
@@ -1171,6 +1172,13 @@
             shouldFocusPageRef.current = false;
         }
     }, [activePageId]);
+
+    // Track viewed embed pages for caching
+    useEffect(() => {
+        if (activePageId && activePage?.embedUrl) {
+            setViewedEmbedPages(prev => new Set([...prev, activePageId]));
+        }
+    }, [activePageId, activePage?.embedUrl]);
 
     // Focus main Title logic
     useEffect(() => {
@@ -1706,6 +1714,13 @@
         setEditingPageId(null);
         setEditingTabId(null);
         setEditingNotebookId(null);
+        
+        // Track viewed embed pages for caching
+        const page = data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages)).find(p => p.id === pageId);
+        if (page?.embedUrl) {
+            setViewedEmbedPages(prev => new Set([...prev, pageId]));
+        }
+        
         // Persist the last open page to the tab
         setData(prev => ({
             ...prev,
@@ -1759,7 +1774,6 @@
                         } else {
                             return p; // No change if neither found
                         }
-                        
                         return { ...p, embedUrl: newEmbedUrl };
                     })
                 }))
@@ -2010,15 +2024,16 @@
         return false;
       }
       
-      // Build embed URL based on type
+      // Build embed URL based on type (default to edit mode for Google docs)
       let embedUrl;
       if (pageType === 'doc') {
-        embedUrl = `https://docs.google.com/document/d/${fileId}/preview`;
+        embedUrl = `https://docs.google.com/document/d/${fileId}/edit`;
       } else if (pageType === 'sheet') {
-        embedUrl = `https://docs.google.com/spreadsheets/d/${fileId}/preview`;
+        embedUrl = `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
       } else if (pageType === 'slide') {
-        embedUrl = `https://docs.google.com/presentation/d/${fileId}/preview`;
+        embedUrl = `https://docs.google.com/presentation/d/${fileId}/edit`;
       } else {
+        // Generic Drive files stay at preview (can't be edited inline)
         embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
       }
       
@@ -2087,16 +2102,16 @@
         pageType = 'drive';
       }
       
-      // Build embed URL based on type
+      // Build embed URL based on type (default to edit mode for Google docs)
       let embedUrl;
       if (pageType === 'doc') {
-        embedUrl = `https://docs.google.com/document/d/${file.id}/preview`;
+        embedUrl = `https://docs.google.com/document/d/${file.id}/edit`;
       } else if (pageType === 'sheet') {
-        embedUrl = `https://docs.google.com/spreadsheets/d/${file.id}/preview`;
+        embedUrl = `https://docs.google.com/spreadsheets/d/${file.id}/edit`;
       } else if (pageType === 'slide') {
-        embedUrl = `https://docs.google.com/presentation/d/${file.id}/preview`;
+        embedUrl = `https://docs.google.com/presentation/d/${file.id}/edit`;
       } else {
-        // Generic Drive file preview
+        // Generic Drive files stay at preview (can't be edited inline)
         embedUrl = `https://drive.google.com/file/d/${file.id}/preview`;
       }
       
@@ -2786,10 +2801,10 @@
     return (
       <div className="flex h-screen w-full bg-gray-50 overflow-hidden font-sans text-sm">
         {/* NOTEBOOKS SIDEBAR */}
-        <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-200 bg-gray-900 text-gray-300 transition-all duration-200`}>
-          <div className={`p-4 border-b border-gray-800 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
-              {!settings.condensedView && <span className="font-bold text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
-              <button onClick={addNotebook} className="hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
+        <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 transition-all duration-200`}>
+          <div className={`p-4 border-b border-gray-200 dark:border-gray-800 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
+              {!settings.condensedView && <span className="font-bold text-gray-900 dark:text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
+              <button onClick={addNotebook} className="hover:bg-gray-200 dark:hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {/* Favorites Section - Collapsible */}
@@ -2797,7 +2812,7 @@
               <div className="mb-2">
                 <button 
                   onClick={() => setFavoritesExpanded(!favoritesExpanded)}
-                  className={`w-full flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-2 py-1.5 text-yellow-400 hover:bg-gray-800 rounded transition-colors`}
+                  className={`w-full flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-2 py-1.5 text-yellow-500 dark:text-yellow-400 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition-colors`}
                 >
                   <ChevronRight size={14} className={`transition-transform ${favoritesExpanded ? 'rotate-90' : ''} ${settings.condensedView ? 'hidden' : ''}`} />
                   <Star size={14} filled />
@@ -2816,7 +2831,7 @@
                       setActiveTabId(page.tabId);
                       setActivePageId(page.id);
                     }}
-                    className={`flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2 ml-4'} px-3 py-1.5 rounded cursor-pointer transition-colors hover:bg-gray-800 ${activePageId === page.id ? 'bg-gray-800 text-white' : ''}`}
+                    className={`flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2 ml-4'} px-3 py-1.5 rounded cursor-pointer transition-colors hover:bg-gray-200 dark:hover:bg-gray-800 ${activePageId === page.id ? 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-white' : ''}`}
                     title={settings.condensedView ? `${page.name} (${page.notebookName} / ${page.tabName})` : undefined}
                   >
                     <span className="text-sm">{page.icon || '📄'}</span>
@@ -2828,15 +2843,15 @@
                     )}
                   </div>
                 ))}
-                <div className="border-b border-gray-700 my-2"></div>
+                <div className="border-b border-gray-300 dark:border-gray-700 my-2"></div>
               </div>
             )}
             
             {data.notebooks.map((nb, index) => (
               <div key={nb.id} className="group flex items-center gap-2" draggable={!editingNotebookId} onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'notebook', index)} title={settings.condensedView ? nb.name : undefined}>
-                   <div onClick={() => selectNotebook(nb.id)} className={`flex-1 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-colors ${activeNotebookId === nb.id ? 'bg-gray-800 text-white font-medium' : 'hover:bg-gray-800'}`}>
+                   <div onClick={() => selectNotebook(nb.id)} className={`flex-1 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-colors ${activeNotebookId === nb.id ? 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-white font-medium' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
                       <span 
-                          className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${settings.condensedView ? '' : 'cursor-pointer hover:bg-gray-700'} rounded px-0.5 notebook-icon-trigger`} 
+                          className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${settings.condensedView ? '' : 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700'} rounded px-0.5 notebook-icon-trigger`} 
                           onClick={(e) => { 
                               if (settings.condensedView) return; // Don't open picker in condensed view
                               e.stopPropagation(); 
@@ -2883,14 +2898,14 @@
               
               {/* Google Drive Authentication */}
               {!settings.condensedView && (
-                  <div className="border-t border-gray-700 pt-2">
+                  <div className="border-t border-gray-300 dark:border-gray-700 pt-2">
                       {isLoadingAuth ? (
                           <div className="text-xs text-gray-500 text-center">Loading...</div>
                       ) : isAuthenticated ? (
                           <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-700 rounded">
+                              <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-200 dark:bg-gray-700 rounded">
                                   <GoogleG size={14} />
-                                  <span className="text-xs text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
+                                  <span className="text-xs text-gray-900 dark:text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
                                   {isSyncing && (
                                       <span className="text-xs text-blue-400 animate-pulse" title="Syncing with Drive...">⟳</span>
                                   )}
@@ -3064,19 +3079,24 @@
                                   >
                                       <Star size={16} filled={activePage.starred} />
                                   </button>
-                                  {/* Edit/Preview Toggle - Only for Google Docs/Sheets/Slides */}
+                                  {/* Edit/Preview Toggle Switch - Only for Google Docs/Sheets/Slides */}
                                   {['doc', 'sheet', 'slide'].includes(activePage.type) && (
-                                      <button
-                                          onClick={() => toggleViewMode(activePage.id)}
-                                          className={`ml-1 px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
-                                              activePage.embedUrl.includes('/preview') 
-                                                  ? 'bg-gray-200 text-gray-600 hover:bg-gray-300' 
-                                                  : 'bg-blue-500 text-white hover:bg-blue-600'
-                                          }`}
-                                          title={activePage.embedUrl.includes('/preview') ? 'Click to enable editing' : 'Click to switch to preview mode'}
-                                      >
-                                          {activePage.embedUrl.includes('/preview') ? 'Preview' : 'Editing'}
-                                      </button>
+                                      <div className="flex items-center gap-1.5 ml-2">
+                                          <span className={`text-xs font-medium transition-colors ${!activePage.embedUrl.includes('/preview') ? 'text-blue-600' : 'text-gray-400'}`}>Edit</span>
+                                          <button
+                                              onClick={() => toggleViewMode(activePage.id)}
+                                              className="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none overflow-hidden"
+                                              style={{ backgroundColor: activePage.embedUrl.includes('/preview') ? '#9ca3af' : '#3b82f6' }}
+                                              title={activePage.embedUrl.includes('/preview') ? 'Switch to Edit mode' : 'Switch to Preview mode'}
+                                          >
+                                              <span 
+                                                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                                                      activePage.embedUrl.includes('/preview') ? 'translate-x-5' : 'translate-x-0'
+                                                  }`}
+                                              />
+                                          </button>
+                                          <span className={`text-xs font-medium transition-colors ${activePage.embedUrl.includes('/preview') ? 'text-gray-600' : 'text-gray-400'}`}>Preview</span>
+                                      </div>
                                   )}
                                   <span className="text-xs text-gray-400 ml-auto">
                                       {activePage.type === 'doc' ? 'Google Docs' : 
@@ -3086,11 +3106,20 @@
                                        activePage.type === 'pdf' ? 'PDF Document' : 'Embed'}
                                   </span>
                               </div>
-                              <iframe 
-                                  src={activePage.embedUrl}
-                                  className="flex-1 w-full border-0"
-                                  allow="autoplay"
-                              />
+                              {/* Render all cached embed page iframes - only show active one */}
+                              <div className="flex-1 w-full relative">
+                                  {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
+                                      .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
+                                      .map(page => (
+                                          <iframe 
+                                              key={page.id}
+                                              src={page.embedUrl}
+                                              className={`absolute inset-0 w-full h-full border-0 ${page.id === activePageId ? '' : 'hidden'}`}
+                                              allow="autoplay"
+                                          />
+                                      ))
+                                  }
+                              </div>
                           </div>
                       ) : (
                       // Regular block page
@@ -3301,13 +3330,10 @@
                                   ))}
                               </div>
                               
-                              {/* Clickable area to add new block */}
-                              <div 
-                                  className="mt-4 p-2 rounded cursor-text group"
-                                  onClick={() => addBlock('text')}
-                              >
-                                  <div className="text-gray-300 group-hover:text-gray-400 transition-colors pl-6">
-                                      Type '/' for commands
+                              {/* Placeholder hint - no longer clickable */}
+                              <div className="mt-4 p-2 rounded">
+                                  <div className="text-gray-300 pl-6">
+                                      Press Enter in a block or use + to add content
                                   </div>
                               </div>
                               
@@ -3394,7 +3420,7 @@
                                   title={settings.condensedView ? page.name : undefined}>
                                   <span className={settings.condensedView ? 'text-xl' : 'mr-1'}>{page.icon || '📄'}</span>
                                   {!settings.condensedView && (activePageId === page.id && editingPageId === page.id ? (
-                                      <input className="flex-1 bg-transparent outline-none page-input" value={page.name} onChange={(e) => updateLocalName('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('page', page.id); setEditingPageId(null); }} onKeyDown={(e) => e.stopPropagation()} autoFocus />
+                                      <input className="flex-1 bg-transparent outline-none page-input" value={page.name} onChange={(e) => updateLocalName('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('page', page.id); setEditingPageId(null); }} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); }} autoFocus />
                                   ) : ( 
                                       <div className="flex-1 truncate" onClick={(e) => { if(activePageId === page.id) { e.stopPropagation(); setEditingPageId(page.id); } }}>{page.name}</div> 
                                   ))}

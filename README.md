@@ -113,6 +113,8 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.4.1** - iOS-style Edit/Preview toggle fix, page caching for faster switching, light mode color fixes, Enter key to finish editing page names
+- **v2.4.0** - Edit/Preview toggle for Google pages, Drive import modal with URL paste, default to Edit mode for embeds
 - **v2.3.1** - Fix sync triggers, Drive reconciliation, delete/rename sync fixes
 - **v2.3.0** - Portable backup with offline viewer, one-way sync (notebook as master)
 - **v2.2.0** - Two-way Drive sync, sync status UI improvements
