@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.4";
+  const APP_VERSION = "2.4.5";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -894,6 +894,7 @@
     const [sheetImportUrl, setSheetImportUrl] = useState('');
     const [slideImportUrl, setSlideImportUrl] = useState('');
     const [viewedEmbedPages, setViewedEmbedPages] = useState(new Set());
+    const [pageZoomLevels, setPageZoomLevels] = useState({});
     const [editEmbedName, setEditEmbedName] = useState('');
     const [editEmbedUrl, setEditEmbedUrl] = useState('');
     const [editEmbedViewMode, setEditEmbedViewMode] = useState('edit'); // 'edit' or 'preview'
@@ -1745,6 +1746,13 @@
                 }
             )
         }));
+    };
+
+    // Zoom helpers for embedded pages
+    const getPageZoom = (pageId) => pageZoomLevels[pageId] || 100;
+    const setPageZoom = (pageId, zoom) => {
+        const clampedZoom = Math.min(200, Math.max(25, zoom));
+        setPageZoomLevels(prev => ({ ...prev, [pageId]: clampedZoom }));
     };
 
     // Toggle between edit and preview mode for Google pages
@@ -3017,7 +3025,7 @@
 
           <div className="flex-1 flex overflow-hidden">
               {/* Main content area with cached iframes */}
-              <div className={`flex-1 overflow-y-auto relative ${activePage?.embedUrl ? 'p-0' : 'p-8'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+              <div className={`flex-1 relative ${activePage?.embedUrl ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
                       .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
@@ -3025,10 +3033,18 @@
                           <iframe 
                               key={page.id}
                               src={page.embedUrl}
-                              className={`absolute inset-0 w-full h-full border-0 ${
+                              className={`absolute w-full border-0 ${
                                   activePage?.id === page.id && activePage?.embedUrl ? '' : 'hidden'
                               }`}
-                              style={{ top: activePage?.id === page.id ? '52px' : '0' }}
+                              style={{ 
+                                  top: activePage?.id === page.id ? '52px' : '0',
+                                  left: 0,
+                                  right: 0,
+                                  height: activePage?.id === page.id ? 'calc(100% - 52px)' : '100%',
+                                  transform: `scale(${(pageZoomLevels[page.id] || 100) / 100})`,
+                                  transformOrigin: 'top left',
+                                  width: `${100 / ((pageZoomLevels[page.id] || 100) / 100)}%`
+                              }}
                               allow="autoplay"
                           />
                       ))
@@ -3100,6 +3116,28 @@
                                           <span className={`text-xs font-medium transition-colors ${activePage.embedUrl.includes('/preview') ? 'text-gray-600' : 'text-gray-400'}`}>Preview</span>
                                       </div>
                                   )}
+                                  {/* Zoom Controls */}
+                                  <div className="flex items-center gap-1 ml-2 border-l border-gray-200 pl-2">
+                                      <button 
+                                          onClick={() => setPageZoom(activePage.id, getPageZoom(activePage.id) - 25)}
+                                          className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                                          disabled={getPageZoom(activePage.id) <= 25}
+                                          title="Zoom out"
+                                      >
+                                          <Minus size={14} />
+                                      </button>
+                                      <span className="text-xs text-gray-600 w-10 text-center font-medium">
+                                          {getPageZoom(activePage.id)}%
+                                      </span>
+                                      <button 
+                                          onClick={() => setPageZoom(activePage.id, getPageZoom(activePage.id) + 25)}
+                                          className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                                          disabled={getPageZoom(activePage.id) >= 200}
+                                          title="Zoom in"
+                                      >
+                                          <Plus size={14} />
+                                      </button>
+                                  </div>
                                   {/* URL Field */}
                                   <div className="flex items-center gap-1 ml-2">
                                       <span className="text-xs text-gray-400">URL:</span>
@@ -3131,7 +3169,7 @@
                                   </span>
                               </div>
                               {/* Placeholder for iframe - actual iframes rendered at higher level for caching */}
-                              <div className="flex-1 w-full relative" />
+                              <div className="flex-1 w-full relative pointer-events-none" />
                           </div>
                       ) : (
                       // Regular block page
