@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.1";
+  const APP_VERSION = "2.4.2";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -1802,13 +1802,13 @@
         return starred;
     };
 
-    // Helper to create a default page (empty - bottom block logic handles adding blocks)
+    // Helper to create a default page with one empty text block
     const createDefaultPage = (name = 'New Page') => {
       return { 
         id: generateId(), 
         name, 
         createdAt: Date.now(), 
-        rows: [], // Empty - the "always have a blank block at bottom" logic handles this
+        rows: [{ id: generateId(), columns: [{ id: generateId(), blocks: [{ id: generateId(), type: 'text', content: '' }] }] }],
         icon: '📄', 
         cover: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
       };
@@ -2647,20 +2647,20 @@
     };
 
     const getTabColorClasses = (colorName, isActive) => {
-        // Inactive tab colors - pastel colors that stay consistent in light/dark mode
+        // Inactive tab colors - pastel in light mode, darker in dark mode
         const colors = {
-            gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800',
-            red: 'bg-red-100 hover:bg-red-200 text-red-800',
-            orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800',
-            amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800',
-            green: 'bg-green-100 hover:bg-green-200 text-green-800',
-            teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800',
-            blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800',
-            indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800',
-            purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800',
-            pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800',
+            gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200',
+            red: 'bg-red-100 hover:bg-red-200 text-red-800 dark:bg-red-900 dark:hover:bg-red-800 dark:text-red-200',
+            orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-200',
+            amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900 dark:hover:bg-amber-800 dark:text-amber-200',
+            green: 'bg-green-100 hover:bg-green-200 text-green-800 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-200',
+            teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800 dark:bg-teal-900 dark:hover:bg-teal-800 dark:text-teal-200',
+            blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-200',
+            indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800 dark:bg-indigo-900 dark:hover:bg-indigo-800 dark:text-indigo-200',
+            purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-900 dark:hover:bg-purple-800 dark:text-purple-200',
+            pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800 dark:bg-pink-900 dark:hover:bg-pink-800 dark:text-pink-200',
         };
-        // Active tab colors - solid colors
+        // Active tab colors - solid colors (same in both modes)
         const activeColors = {
              gray: 'bg-gray-500 text-white', red: 'bg-red-500 text-white', orange: 'bg-orange-500 text-white',
              amber: 'bg-amber-500 text-white', green: 'bg-green-600 text-white', teal: 'bg-teal-600 text-white',
@@ -2800,11 +2800,11 @@
 
     return (
       <div className="flex h-screen w-full bg-gray-50 overflow-hidden font-sans text-sm">
-        {/* NOTEBOOKS SIDEBAR */}
-        <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 bg-gray-200 dark:bg-gray-900 text-gray-700 dark:text-gray-300 transition-all duration-200`}>
-          <div className={`p-4 border-b border-gray-200 dark:border-gray-800 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
-              {!settings.condensedView && <span className="font-bold text-gray-900 dark:text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
-              <button onClick={addNotebook} className="hover:bg-gray-200 dark:hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
+        {/* NOTEBOOKS SIDEBAR - Always dark */}
+        <div className={`${settings.condensedView ? 'w-16' : 'w-64'} flex-shrink-0 flex flex-col border-r border-gray-700 bg-gray-900 text-gray-300 transition-all duration-200`}>
+          <div className={`p-4 border-b border-gray-800 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
+              {!settings.condensedView && <span className="font-bold text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
+              <button onClick={addNotebook} className="hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {/* Favorites Section - Collapsible */}
@@ -2812,7 +2812,7 @@
               <div className="mb-2">
                 <button 
                   onClick={() => setFavoritesExpanded(!favoritesExpanded)}
-                  className={`w-full flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-2 py-1.5 text-yellow-500 dark:text-yellow-400 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition-colors`}
+                  className={`w-full flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-2 py-1.5 text-yellow-400 hover:bg-gray-800 rounded transition-colors`}
                 >
                   <ChevronRight size={14} className={`transition-transform ${favoritesExpanded ? 'rotate-90' : ''} ${settings.condensedView ? 'hidden' : ''}`} />
                   <Star size={14} filled />
@@ -2831,7 +2831,7 @@
                       setActiveTabId(page.tabId);
                       setActivePageId(page.id);
                     }}
-                    className={`flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2 ml-4'} px-3 py-1.5 rounded cursor-pointer transition-colors hover:bg-gray-200 dark:hover:bg-gray-800 ${activePageId === page.id ? 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-white' : ''}`}
+                    className={`flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2 ml-4'} px-3 py-1.5 rounded cursor-pointer transition-colors hover:bg-gray-800 ${activePageId === page.id ? 'bg-gray-800 text-white' : ''}`}
                     title={settings.condensedView ? `${page.name} (${page.notebookName} / ${page.tabName})` : undefined}
                   >
                     <span className="text-sm">{page.icon || '📄'}</span>
@@ -2843,15 +2843,15 @@
                     )}
                   </div>
                 ))}
-                <div className="border-b border-gray-300 dark:border-gray-700 my-2"></div>
+                <div className="border-b border-gray-700 my-2"></div>
               </div>
             )}
             
             {data.notebooks.map((nb, index) => (
               <div key={nb.id} className="group flex items-center gap-2" draggable={!editingNotebookId} onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'notebook', index)} title={settings.condensedView ? nb.name : undefined}>
-                   <div onClick={() => selectNotebook(nb.id)} className={`flex-1 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-colors ${activeNotebookId === nb.id ? 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-white font-medium' : 'hover:bg-gray-200 dark:hover:bg-gray-800'}`}>
+                   <div onClick={() => selectNotebook(nb.id)} className={`flex-1 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-colors ${activeNotebookId === nb.id ? 'bg-gray-800 text-white font-medium' : 'hover:bg-gray-800'}`}>
                       <span 
-                          className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${settings.condensedView ? '' : 'cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700'} rounded px-0.5 notebook-icon-trigger`} 
+                          className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${settings.condensedView ? '' : 'cursor-pointer hover:bg-gray-700'} rounded px-0.5 notebook-icon-trigger`} 
                           onClick={(e) => { 
                               if (settings.condensedView) return; // Don't open picker in condensed view
                               e.stopPropagation(); 
@@ -2898,14 +2898,14 @@
               
               {/* Google Drive Authentication */}
               {!settings.condensedView && (
-                  <div className="border-t border-gray-300 dark:border-gray-700 pt-2">
+                  <div className="border-t border-gray-700 pt-2">
                       {isLoadingAuth ? (
                           <div className="text-xs text-gray-500 text-center">Loading...</div>
                       ) : isAuthenticated ? (
                           <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-200 dark:bg-gray-700 rounded">
+                              <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-700 rounded">
                                   <GoogleG size={14} />
-                                  <span className="text-xs text-gray-900 dark:text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
+                                  <span className="text-xs text-white truncate flex-1" title={userEmail}>{userName || userEmail}</span>
                                   {isSyncing && (
                                       <span className="text-xs text-blue-400 animate-pulse" title="Syncing with Drive...">⟳</span>
                                   )}
@@ -2945,7 +2945,7 @@
           {activeNotebook ? (
                <div 
                    ref={tabBarRef}
-                   className={`h-12 flex-shrink-0 bg-gray-100 border-b border-gray-300 flex items-end px-2 ${tabsOverflow ? 'overflow-hidden' : 'overflow-x-auto no-scrollbar'}`}
+                   className={`h-12 flex-shrink-0 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-end px-2 ${tabsOverflow ? 'overflow-hidden' : 'overflow-x-auto no-scrollbar'}`}
                    onMouseLeave={() => setHoveredTabId(null)}
                >
                <div className={`flex items-end space-x-1 ${tabsOverflow ? 'flex-1 min-w-0' : ''}`}>
@@ -3000,7 +3000,7 @@
                               e.stopPropagation(); 
                           }} onClick={(e) => e.stopPropagation()} />
                       ) : (
-                          <span className="truncate font-medium flex-1 min-w-0" onClick={(e) => { if(activeTabId === tab.id && showDetails) { e.stopPropagation(); setEditingTabId(tab.id); } }}>{tab.name}</span>
+                          <span className="truncate font-medium flex-1 min-w-0" onDoubleClick={(e) => { if(activeTabId === tab.id && showDetails) { e.stopPropagation(); setEditingTabId(tab.id); } }}>{tab.name}</span>
                       ))}
                        {showDetails && !settings.condensedView && <div className="relative ml-auto flex-shrink-0">
                           <button className={`p-1 rounded hover:bg-black/10 tab-settings-trigger ${activeTabId === tab.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} onClick={(e) => {
@@ -3019,7 +3019,7 @@
                <button onClick={addTab} className="mb-2 ml-1 p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors flex-shrink-0"><Plus size={18}/></button>
              </div>
           ) : (
-              <div className="h-12 bg-gray-100 border-b border-gray-300 flex items-center px-4 text-gray-400">Select a notebook</div>
+              <div className="h-12 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-center px-4 text-gray-500 dark:text-gray-400">Select a notebook</div>
           )}
 
           <div className="flex-1 flex overflow-hidden relative">
@@ -3331,13 +3331,6 @@
                                           ))}
                                       </div>
                                   ))}
-                              </div>
-                              
-                              {/* Placeholder hint - no longer clickable */}
-                              <div className="mt-4 p-2 rounded">
-                                  <div className="text-gray-300 pl-6">
-                                      Press Enter in a block or use + to add content
-                                  </div>
                               </div>
                               
                               <div className="mt-12 pb-20 opacity-30 hover:opacity-50 transition-opacity">
