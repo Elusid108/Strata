@@ -30,6 +30,8 @@ Strata/
 └── README.md           # This file
 ```
 
+Note: index.html is self-contained (inline app + styles). app.js and styles.css are kept for development/edit convenience; config.js and google-api.js are still loaded externally.
+
 ## Features
 
 - **Notebooks, Tabs, and Pages** - Organize your notes hierarchically
@@ -114,6 +116,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.5.3** - Performance and UX overhaul: active-page slice for faster typing, React.memo + stable callbacks on ContentBlock/BlockComponent, contentEditable fix (no dangerouslySetInnerHTML), useLayoutEffect for Ctrl+Enter focus, throttled block DnD, min-h-0 scroll fixes, condensed sidebar horizontal-scroll fix, tab/sidebar/empty-state polish. Pure helpers (getActiveContext, updatePageInData, getDropIndicatorClass). Single-file build: app + styles inlined into index.html.
 - **v2.5.2** - Fixed canvas coordinate system: corrected zoom-to-mouse calculation, viewport bounds calculation, and coordinate transformations to account for canvas-background offset; fixed live drawing path visibility during pen tool usage
 - **v2.5.1** - Fixed canvas rendering issue: reverted dynamic grid that caused blank canvas screens, restored fixed 50000px grid, fixed live drawing path positioning for real-time feedback
 - **v2.5.0** - Canvas pages: infinite canvas with freeform drawing, text containers, image pasting, pan/zoom controls, transform state persistence per page, title syncing with page list

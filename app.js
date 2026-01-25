@@ -1,7 +1,7 @@
-  const { useState, useEffect, useRef, useLayoutEffect, useCallback } = React;
+  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.2";
+  const APP_VERSION = "2.5.3";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -357,6 +357,45 @@
       return COLORS[nextIndex].name;
   };
 
+  /** Pure: resolve notebook/tab/page from data by ids. Returns { notebook, tab, page }. */
+  const getActiveContext = (data, notebookId, tabId, pageId) => {
+      const notebook = data.notebooks?.find(n => n.id === notebookId) ?? null;
+      const tab = notebook?.tabs?.find(t => t.id === tabId) ?? null;
+      const page = tab?.pages?.find(p => p.id === pageId) ?? null;
+      return { notebook, tab, page };
+  };
+
+  /** Pure: immutable update of a single page in data. updater(page) => newPage. */
+  const updatePageInData = (data, { notebookId, tabId, pageId }, updater) => {
+      return {
+          ...data,
+          notebooks: data.notebooks.map(nb =>
+              nb.id !== notebookId ? nb : {
+                  ...nb,
+                  tabs: nb.tabs.map(tab =>
+                      tab.id !== tabId ? tab : {
+                          ...tab,
+                          pages: tab.pages.map(p =>
+                              p.id !== pageId ? p : updater(p)
+                          )
+                      }
+                  )
+              }
+          )
+      };
+  };
+
+  /** Pure: drop indicator Tailwind classes for block DnD. */
+  const getDropIndicatorClass = (position) => {
+      switch (position) {
+          case 'top': return 'border-t-4 border-blue-500 pt-2';
+          case 'bottom': return 'border-b-4 border-blue-500 pb-2';
+          case 'left': return 'border-l-4 border-blue-500 pl-2';
+          case 'right': return 'border-r-4 border-blue-500 pr-2';
+          default: return '';
+      }
+  };
+
   const INITIAL_DATA = {
     notebooks: [
       {
@@ -418,10 +457,9 @@
       )
   }
 
-  const ContentBlock = ({ html, tagName, className, placeholder, onChange, onInsertBelow, onInsertTextBelow, onExitList, blockId, autoFocusId, onFocus, onConvert, onDelete, isLastBlock }) => {
+  const ContentBlock = memo(({ html, tagName, className, placeholder, onChange, onInsertBelow, onInsertTextBelow, onExitList, blockId, autoFocusId, onFocus, onConvert, onDelete, isLastBlock }) => {
       const contentEditableRef = useRef(null);
-      const isLocked = useRef(false); 
-      const initialHtml = useRef(html);
+      const isLocked = useRef(false);
       const [slashMenu, setSlashMenu] = useState({ open: false, filter: '', selectedIndex: 0, position: { top: 0, left: 0 } });
 
       const processHtml = (rawHtml, tag) => {
@@ -433,32 +471,35 @@
       };
 
       const safeHtml = processHtml(html, tagName);
-      initialHtml.current = processHtml(initialHtml.current, tagName);
 
-      // Filter slash commands based on input
-      const filteredCommands = slashMenu.open ? SLASH_COMMANDS.filter(cmd => 
+      const filteredCommands = slashMenu.open ? SLASH_COMMANDS.filter(cmd =>
           cmd.aliases.some(alias => alias.startsWith(slashMenu.filter.toLowerCase())) ||
           cmd.label.toLowerCase().includes(slashMenu.filter.toLowerCase())
       ) : [];
 
       useEffect(() => {
-          if (contentEditableRef.current && !isLocked.current) {
-               if (contentEditableRef.current.innerHTML !== safeHtml) {
-                   contentEditableRef.current.innerHTML = safeHtml;
-               }
+          if (!contentEditableRef.current) return;
+          const el = contentEditableRef.current;
+          if (!isLocked.current && el.innerHTML !== safeHtml) {
+              el.innerHTML = safeHtml;
           }
       }, [safeHtml]);
 
       useEffect(() => {
-          if (autoFocusId === blockId && contentEditableRef.current) {
-              contentEditableRef.current.focus();
-              const range = document.createRange();
-              const sel = window.getSelection();
-              range.selectNodeContents(contentEditableRef.current);
-              range.collapse(false);
-              sel.removeAllRanges();
-              sel.addRange(range);
-          }
+          if (!contentEditableRef.current) return;
+          contentEditableRef.current.innerHTML = processHtml(html, tagName);
+      }, [blockId]);
+
+      useLayoutEffect(() => {
+          if (autoFocusId !== blockId || !contentEditableRef.current) return;
+          const el = contentEditableRef.current;
+          el.focus();
+          const range = document.createRange();
+          const sel = window.getSelection();
+          range.selectNodeContents(el);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
       }, [autoFocusId, blockId]);
 
       const getCaretPosition = () => {
@@ -651,8 +692,8 @@
           <>
               <Tag
                   ref={contentEditableRef}
-                  className={tagName === 'ul' || tagName === 'ol' ? 
-                      `outline-none pl-5 ml-1 cursor-text list-outside ${className} ${tagName === 'ul' ? 'list-disc' : 'list-decimal'}` : 
+                  className={tagName === 'ul' || tagName === 'ol' ?
+                      `outline-none pl-5 ml-1 cursor-text list-outside ${className} ${tagName === 'ul' ? 'list-disc' : 'list-decimal'}` :
                       `outline-none empty:before:content-[attr(placeholder)] empty:before:text-gray-300 cursor-text ${className}`
                   }
                   contentEditable
@@ -662,7 +703,6 @@
                   onKeyDown={handleKeyDown}
                   onBlur={handleBlur}
                   onFocus={handleFocus}
-                  dangerouslySetInnerHTML={{ __html: initialHtml.current }}
               />
               {slashMenu.open && filteredCommands.length > 0 && (
                   <div 
@@ -687,19 +727,11 @@
               )}
           </>
       );
-  };
+  });
 
-  const BlockComponent = ({ block, rowId, colId, onUpdate, onDelete, onInsertBelow, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus, isLastBlock }) => {
+  const BlockComponent = memo(({ block, rowId, colId, onUpdate, onDelete, onInsertAfter, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus, isLastBlock }) => {
       const isTarget = dropTarget && dropTarget.blockId === block.id;
-      const indicatorStyle = isTarget ? (() => {
-          switch(dropTarget.position) {
-              case 'top': return 'border-t-4 border-blue-500 pt-2';
-              case 'bottom': return 'border-b-4 border-blue-500 pb-2';
-              case 'left': return 'border-l-4 border-blue-500 pl-2';
-              case 'right': return 'border-r-4 border-blue-500 pr-2';
-              default: return '';
-          }
-      })() : '';
+      const indicatorStyle = isTarget ? getDropIndicatorClass(dropTarget.position) : '';
 
       const [showLightbox, setShowLightbox] = useState(false);
       const bgClass = block.backgroundColor ? BG_COLORS[block.backgroundColor] : '';
@@ -710,24 +742,20 @@
 
       const handleConvert = (newType) => {
           const isMedia = ['image', 'video', 'link'].includes(newType);
-          onUpdate({ type: newType, content: isMedia ? '' : '', url: '' });
-          // For dividers, auto-insert a text block below for continued typing
+          onUpdate(block.id, { type: newType, content: isMedia ? '' : '', url: '' });
           if (newType === 'divider') {
-              onInsertBelow();
+              onInsertAfter(block.id, 'text');
           } else if (onRequestFocus) {
-              // Focus the block after conversion so user can start typing immediately
-              onRequestFocus();
+              onRequestFocus(block.id);
           }
       };
-      
+
       const handleMediaKeyDown = (e) => {
           if (e.key === 'Enter') {
               if (e.ctrlKey || e.metaKey) {
-                  // Ctrl+Enter -> New block below
                   e.preventDefault();
-                  onInsertBelow();
+                  onInsertAfter(block.id, 'text');
               } else {
-                  // Enter -> Confirm input (blur)
                   e.target.blur();
               }
           }
@@ -736,10 +764,14 @@
       const renderTextContent = () => {
           const props = {
               html: block.content,
-              onChange: (content) => onUpdate({ content }),
-              onInsertBelow, blockId: block.id, autoFocusId, onFocus,
+              onChange: (content) => onUpdate(block.id, { content }),
+              onInsertBelow: () => onInsertAfter(block.id, 'text'),
+              onInsertTextBelow: () => onInsertAfter(block.id, 'text'),
+              blockId: block.id,
+              autoFocusId,
+              onFocus,
               onConvert: handleConvert,
-              onDelete,
+              onDelete: () => onDelete(block.id),
               isLastBlock,
               placeholder: "Type '/' for commands"
           };
@@ -758,10 +790,13 @@
       return (
           <>
               <div 
-                  draggable onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
+                  draggable
+                  onDragStart={(e) => onDragStart(e, block, rowId, colId)}
+                  onDragOver={(e) => onDragOver(e, block.id, rowId, colId)}
+                  onDrop={onDrop}
                   className={`group relative flex gap-2 items-start p-1 rounded transition-all ${indicatorStyle} ${bgClass} ${borderClass}`}
               >
-                  <div className="mt-1 cursor-grab opacity-0 group-hover:opacity-50 hover:!opacity-100 active:cursor-grabbing text-gray-400 block-handle" onClick={onHandleClick}>
+                  <div className="mt-1 cursor-grab opacity-0 group-hover:opacity-50 hover:!opacity-100 active:cursor-grabbing text-gray-400 block-handle" onClick={(e) => onHandleClick(e, block.id)}>
                       <GripVertical size={16} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -770,10 +805,10 @@
                       {block.type === 'todo' && (
                           <div className="flex items-start gap-2 mb-1">
                               <div className="pt-1 select-none" contentEditable={false}>
-                                  <input type="checkbox" checked={block.checked || false} onChange={(e) => onUpdate({ checked: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-500 rounded border-gray-300" />
+                                  <input type="checkbox" checked={block.checked || false} onChange={(e) => onUpdate(block.id, { checked: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-500 rounded border-gray-300" />
                               </div>
                               <div className={`flex-1 ${block.checked ? 'line-through text-gray-400' : ''}`}>
-                                  <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" html={block.content} onChange={(content) => onUpdate({ content })} onInsertBelow={() => onInsertBelow('todo')} onInsertTextBelow={() => onInsertBelow('text')} onExitList={() => handleConvert('text')} blockId={block.id} autoFocusId={autoFocusId} onFocus={onFocus} onConvert={handleConvert} onDelete={onDelete} isLastBlock={isLastBlock} placeholder="To-do item" />
+                                  <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" html={block.content} onChange={(content) => onUpdate(block.id, { content })} onInsertBelow={() => onInsertAfter(block.id, 'todo')} onInsertTextBelow={() => onInsertAfter(block.id, 'text')} onExitList={() => handleConvert('text')} blockId={block.id} autoFocusId={autoFocusId} onFocus={onFocus} onConvert={handleConvert} onDelete={() => onDelete(block.id)} isLastBlock={isLastBlock} placeholder="To-do item" />
                               </div>
                           </div>
                       )}
@@ -786,7 +821,7 @@
                                   </div>
                               ) : (
                                   <div className="bg-gray-100 p-4 rounded text-center border-2 border-dashed border-gray-300">
-                                      <input className="w-full p-2 border rounded text-xs mb-2" placeholder="Paste image URL..." onBlur={(e) => onUpdate({ url: e.target.value })} onKeyDown={handleMediaKeyDown} autoFocus/>
+                                      <input className="w-full p-2 border rounded text-xs mb-2" placeholder="Paste image URL..." onBlur={(e) => onUpdate(block.id, { url: e.target.value })} onKeyDown={handleMediaKeyDown} autoFocus/>
                                   </div>
                               )}
                           </div>
@@ -799,7 +834,7 @@
                                   </div>
                               ) : (
                                   <div className="bg-gray-100 p-4 rounded text-center border-2 border-dashed border-gray-300">
-                                      <input className="w-full p-2 border rounded text-xs mb-2" placeholder="Paste YouTube URL..." onBlur={(e) => onUpdate({ url: e.target.value })} onKeyDown={handleMediaKeyDown} autoFocus/>
+                                      <input className="w-full p-2 border rounded text-xs mb-2" placeholder="Paste YouTube URL..." onBlur={(e) => onUpdate(block.id, { url: e.target.value })} onKeyDown={handleMediaKeyDown} autoFocus/>
                                   </div>
                               )}
                           </div>
@@ -808,8 +843,8 @@
                           <div className="p-3 bg-blue-50 rounded border border-blue-100 flex items-center gap-3">
                               <LinkIcon size={20} className="text-blue-500"/>
                               <div className="flex-1 min-w-0">
-                                  <input className="w-full bg-transparent font-medium text-blue-700 outline-none" value={block.content} onChange={(e) => onUpdate({ content: e.target.value })} onKeyDown={handleMediaKeyDown} placeholder="Link Title" autoFocus/>
-                                  <input className="w-full bg-transparent text-xs text-blue-400 outline-none" value={block.url || ''} onChange={(e) => onUpdate({ url: e.target.value })} placeholder="https://example.com" />
+                                  <input className="w-full bg-transparent font-medium text-blue-700 outline-none" value={block.content} onChange={(e) => onUpdate(block.id, { content: e.target.value })} onKeyDown={handleMediaKeyDown} placeholder="Link Title" autoFocus/>
+                                  <input className="w-full bg-transparent text-xs text-blue-400 outline-none" value={block.url || ''} onChange={(e) => onUpdate(block.id, { url: e.target.value })} placeholder="https://example.com" />
                               </div>
                               {block.url && <a href={block.url} target="_blank" className="p-2 hover:bg-blue-100 rounded text-blue-600"><ChevronRight size={16}/></a>}
                           </div>
@@ -845,7 +880,7 @@
                                               <a href={block.webViewLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
                                                   Open in Google Drive
                                               </a>
-                                              <button onClick={() => onUpdate({ driveFileId: null, webViewLink: null, mimeType: null })} className="text-xs text-gray-500 hover:text-red-600">
+                                              <button onClick={() => onUpdate(block.id, { driveFileId: null, webViewLink: null, mimeType: null })} className="text-xs text-gray-500 hover:text-red-600">
                                                   Remove
                                               </button>
                                           </div>
@@ -857,7 +892,7 @@
                                           <button 
                                               onClick={() => {
                                                   GoogleAPI.showDrivePicker((file) => {
-                                                      onUpdate({
+                                                      onUpdate(block.id, {
                                                           driveFileId: file.id,
                                                           webViewLink: file.url,
                                                           mimeType: file.mimeType
@@ -881,8 +916,8 @@
               </div>
               {showLightbox && block.url && <ImageLightbox src={block.url} onClose={() => setShowLightbox(false)} />}
           </>
-      )
-  }
+      );
+  });
 
   // --- Canvas Component ---
   const getFormattedDate = () => {
@@ -1943,7 +1978,13 @@
     const [editingTabId, setEditingTabId] = useState(null);
     const [editingNotebookId, setEditingNotebookId] = useState(null);
     const [draggedBlock, setDraggedBlock] = useState(null);
-    const [dropTarget, setDropTarget] = useState(null); 
+    const [dropTarget, setDropTarget] = useState(null);
+    const [activePageRows, setActivePageRows] = useState(null);
+    const syncContentDebounceRef = useRef(null);
+    const activePageRowsRef = useRef(null);
+    const dataRef = useRef(null);
+    const activeIdsRef = useRef({ notebookId: null, tabId: null, pageId: null });
+    const updatePageContentRef = useRef(null);
     const [activeTabMenu, setActiveTabMenu] = useState(null); 
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [autoFocusId, setAutoFocusId] = useState(null);
@@ -2677,55 +2718,69 @@
         }
     };
 
-    const activeNotebook = data.notebooks.find(n => n.id === activeNotebookId);
-    const activeTab = activeNotebook?.tabs.find(t => t.id === activeTabId);
-    const activePage = activeTab?.pages.find(p => p.id === activePageId);
+    const { notebook: activeNotebook, tab: activeTab, page: activePage } = getActiveContext(data, activeNotebookId, activeTabId, activePageId);
+    const rowsForEditor = activePageRows ?? activePage?.rows ?? [];
+
+    const flushActivePageToData = (rows) => {
+        if (!activePageId || !activeTabId || !activeNotebookId) return;
+        const next = updatePageInData(data, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({ ...p, rows: rows ?? activePageRows }));
+        setData(next);
+        return next;
+    };
+
+    const scheduleSyncToData = () => {
+        if (syncContentDebounceRef.current) clearTimeout(syncContentDebounceRef.current);
+        syncContentDebounceRef.current = setTimeout(() => {
+            syncContentDebounceRef.current = null;
+            const d = dataRef.current;
+            const r = activePageRowsRef.current;
+            const { notebookId, tabId, pageId } = activeIdsRef.current;
+            if (!d || !pageId || !tabId || !notebookId || !r) return;
+            setData(updatePageInData(d, { notebookId, tabId, pageId }, p => ({ ...p, rows: r })));
+        }, 300);
+    };
+
+    const flushAndClearSync = () => {
+        if (syncContentDebounceRef.current) {
+            clearTimeout(syncContentDebounceRef.current);
+            syncContentDebounceRef.current = null;
+        }
+        if (activePageId && activeTabId && activeNotebookId && activePageRows != null) {
+            flushActivePageToData(activePageRows);
+        }
+    };
+
+    useEffect(() => {
+        const ctx = getActiveContext(data, activeNotebookId, activeTabId, activePageId);
+        setActivePageRows(ctx.page ? (ctx.page.rows ?? []) : null);
+    }, [data, activePageId, activeTabId, activeNotebookId]);
+
+    useEffect(() => {
+        dataRef.current = data;
+        activePageRowsRef.current = activePageRows;
+        activeIdsRef.current = { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId };
+    });
 
     const updatePageContent = (rows, shouldSaveHistory = false) => {
-      if (!activePageId || !activeTabId || !activeNotebookId) return;
-      if (shouldSaveHistory) saveToHistory();
-      const newData = {
-        ...data,
-        notebooks: data.notebooks.map(nb => 
-          nb.id !== activeNotebookId ? nb : {
-              ...nb,
-              tabs: nb.tabs.map(tab => 
-                  tab.id !== activeTabId ? tab : {
-                      ...tab,
-                      pages: tab.pages.map(page => 
-                          page.id !== activePageId ? page : { ...page, rows }
-                      )
-                  }
-              )
-          }
-        )
-      };
-      setData(newData);
+        if (!activePageId || !activeTabId || !activeNotebookId) return;
+        setActivePageRows(rows);
+        if (shouldSaveHistory) {
+            const next = updatePageInData(data, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({ ...p, rows }));
+            setData(next);
+            saveToHistory(next);
+        } else {
+            scheduleSyncToData();
+        }
     };
 
     const updatePageMeta = (updates) => {
         if (!activePageId) return;
         saveToHistory();
-        setData(prev => ({
-            ...prev,
-            notebooks: prev.notebooks.map(nb => 
-                nb.id !== activeNotebookId ? nb : {
-                    ...nb,
-                    tabs: nb.tabs.map(tab => 
-                        tab.id !== activeTabId ? tab : {
-                            ...tab,
-                            pages: tab.pages.map(page => 
-                                page.id !== activePageId ? page : { ...page, ...updates }
-                            )
-                        }
-                    )
-                }
-            )
-        }));
-    }
+        setData(prev => updatePageInData(prev, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({ ...p, ...updates })));
+    };
 
     const removeBlock = (blockId) => {
-        let newRows = activePage.rows.map(row => ({
+        const newRows = rowsForEditor.map(row => ({
             ...row,
             columns: row.columns.map(col => ({
                 ...col,
@@ -2735,6 +2790,126 @@
         updatePageContent(newRows, true);
         showNotification('Block deleted', 'success');
     };
+
+    useEffect(() => { updatePageContentRef.current = updatePageContent; });
+
+    const handleUpdateBlock = useCallback((blockId, updates) => {
+        const r = activePageRowsRef.current;
+        if (!r) return;
+        const newRows = r.map(row => ({
+            ...row,
+            columns: row.columns.map(col => ({
+                ...col,
+                blocks: col.blocks.map(b => b.id === blockId ? { ...b, ...updates } : b)
+            }))
+        }));
+        setActivePageRows(newRows);
+        scheduleSyncToData();
+    }, []);
+
+    const handleRemoveBlock = useCallback((blockId) => {
+        const r = activePageRowsRef.current;
+        if (!r) return;
+        const newRows = r.map(row => ({
+            ...row,
+            columns: row.columns.map(col => ({
+                ...col,
+                blocks: col.blocks.filter(b => b.id !== blockId)
+            })).filter(col => col.blocks.length > 0)
+        })).filter(row => row.columns.length > 0);
+        const fn = updatePageContentRef.current;
+        if (fn) fn(newRows, true);
+        showNotification('Block deleted', 'success');
+    }, []);
+
+    const handleInsertBlockAfter = useCallback((targetBlockId, blockType) => {
+        const r = activePageRowsRef.current;
+        const ids = activeIdsRef.current;
+        if (!r || !ids.pageId || !ids.tabId || !ids.notebookId) return;
+        const newBlockId = generateId();
+        const newBlock = { id: newBlockId, type: blockType, content: '', url: '', ...(blockType === 'todo' ? { checked: false } : {}) };
+        const newRows = JSON.parse(JSON.stringify(r));
+        let done = false;
+        for (const row of newRows) {
+            for (const col of row.columns) {
+                const idx = col.blocks.findIndex(b => b.id === targetBlockId);
+                if (idx > -1) {
+                    col.blocks.splice(idx + 1, 0, newBlock);
+                    done = true;
+                    break;
+                }
+            }
+            if (done) break;
+        }
+        if (done) {
+            const fn = updatePageContentRef.current;
+            if (fn) fn(newRows, true);
+            setAutoFocusId(newBlockId);
+        }
+    }, []);
+
+    const handleRequestFocus = useCallback((blockId) => setAutoFocusId(blockId), []);
+    const handleBlockFocus = useCallback(() => {
+        setSelectedBlockId(null);
+        setBlockMenu(null);
+        setAutoFocusId(null);
+    }, []);
+    const handleBlockHandleClick = useCallback((e, blockId) => {
+        e.stopPropagation();
+        if (selectedBlockId === blockId) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setBlockMenu({ id: blockId, top: rect.bottom + 5, left: rect.left });
+        } else {
+            setSelectedBlockId(blockId);
+            setBlockMenu(null);
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        }
+    }, [selectedBlockId]);
+    const handleBlockDragStart = useCallback((e, block, rowId, colId) => {
+        e.dataTransfer.setData('block_drag', JSON.stringify({ block, rowId, colId }));
+        setDraggedBlock({ block, rowId, colId });
+    }, []);
+
+    const lastDropTargetRef = useRef(null);
+    const dropTargetRafRef = useRef(null);
+
+    const handleBlockDragEnd = useCallback(() => {
+        if (dropTargetRafRef.current) {
+            cancelAnimationFrame(dropTargetRafRef.current);
+            dropTargetRafRef.current = null;
+        }
+        lastDropTargetRef.current = null;
+        setDraggedBlock(null);
+        setDropTarget(null);
+    }, []);
+
+    const handleBlockDragOver = useCallback((e, blockId, rowId, colId) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!draggedBlock || draggedBlock.block.id === blockId) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const w = rect.width;
+        const h = rect.height;
+        let position = 'bottom';
+        if (y < h * 0.3) position = 'top';
+        const targetRow = rowsForEditor.find(r => r.id === rowId);
+        const isMaxColumns = targetRow && targetRow.columns.length >= settings.maxColumns;
+        if (!isMaxColumns) {
+            if (x < w * 0.2) position = 'left';
+            else if (x > w * 0.8) position = 'right';
+        }
+        const next = { rowId, colId, blockId, position };
+        const last = lastDropTargetRef.current;
+        if (last && last.blockId === next.blockId && last.position === next.position && last.rowId === next.rowId && last.colId === next.colId) return;
+        lastDropTargetRef.current = next;
+        if (dropTargetRafRef.current) cancelAnimationFrame(dropTargetRafRef.current);
+        dropTargetRafRef.current = requestAnimationFrame(() => {
+            dropTargetRafRef.current = null;
+            setDropTarget(next);
+        });
+    }, [draggedBlock, rowsForEditor, settings]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -2747,18 +2922,19 @@
             
             if (selectedBlockId && e.key === 'Delete') {
                 e.preventDefault();
-                removeBlock(selectedBlockId);
+                handleRemoveBlock(selectedBlockId);
                 setSelectedBlockId(null);
                 setBlockMenu(null);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [history, historyIndex, data, selectedBlockId]);
+    }, [history, historyIndex, data, selectedBlockId, handleRemoveBlock]);
 
     const selectNotebook = (notebookId) => {
         const nb = data.notebooks.find(n => n.id === notebookId);
         if (!nb) return;
+        flushAndClearSync();
         setActiveNotebookId(notebookId);
         setEditingPageId(null);
         setEditingTabId(null);
@@ -2774,6 +2950,7 @@
     };
 
     const selectTab = (tabId) => {
+        flushAndClearSync();
         setActiveTabId(tabId);
         setEditingPageId(null);
         setEditingTabId(null);
@@ -2792,11 +2969,11 @@
     };
 
     const selectPage = (pageId) => {
+        flushAndClearSync();
         setActivePageId(pageId);
         setEditingPageId(null);
         setEditingTabId(null);
         setEditingNotebookId(null);
-        
         // Track viewed embed pages for caching
         const page = data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages)).find(p => p.id === pageId);
         if (page?.embedUrl) {
@@ -3517,66 +3694,9 @@
         if (!activePage) return;
         const newBlock = { id: generateId(), type, content: '', url: '', ...initialData };
         const newRow = { id: generateId(), columns: [{ id: generateId(), blocks: [newBlock] }] };
-        updatePageContent([...activePage.rows, newRow], true);
+        updatePageContent([...rowsForEditor, newRow], true);
         setShowAddMenu(false);
         setAutoFocusId(newBlock.id);
-    };
-
-    const insertBlockAfter = (targetBlockId, blockType = 'text') => {
-      if (!activePageId || !activeTabId || !activeNotebookId) return;
-      const newBlockId = generateId();
-      const newBlock = { id: newBlockId, type: blockType, content: '', url: '', ...(blockType === 'todo' ? { checked: false } : {}) };
-      
-      // Use functional state update to get latest state (avoids stale closure issues)
-      saveToHistory();
-      setData(prevData => {
-        const currentPage = prevData.notebooks
-          .find(nb => nb.id === activeNotebookId)?.tabs
-          .find(t => t.id === activeTabId)?.pages
-          .find(p => p.id === activePageId);
-        
-        if (!currentPage) return prevData;
-        
-        let newRows = JSON.parse(JSON.stringify(currentPage.rows));
-        for (let row of newRows) {
-            for (let col of row.columns) {
-                const index = col.blocks.findIndex(b => b.id === targetBlockId);
-                if (index > -1) {
-                    col.blocks.splice(index + 1, 0, newBlock);
-                    break;
-                }
-            }
-        }
-        
-        return {
-          ...prevData,
-          notebooks: prevData.notebooks.map(nb => 
-            nb.id !== activeNotebookId ? nb : {
-                ...nb,
-                tabs: nb.tabs.map(tab => 
-                    tab.id !== activeTabId ? tab : {
-                        ...tab,
-                        pages: tab.pages.map(page => 
-                            page.id !== activePageId ? page : { ...page, rows: newRows }
-                        )
-                    }
-                )
-            }
-          )
-        };
-      });
-      setAutoFocusId(newBlockId);
-    };
-
-    const updateBlock = (blockId, updates) => {
-      const newRows = activePage.rows.map(row => ({
-          ...row,
-          columns: row.columns.map(col => ({
-              ...col,
-              blocks: col.blocks.map(block => block.id === blockId ? { ...block, ...updates } : block)
-          }))
-      }));
-      updatePageContent(newRows, false);
     };
 
     const updateTabColor = (tabId, color) => {
@@ -3846,9 +3966,9 @@
         const { block } = draggedBlock;
         const { rowId: tgtRowId, colId: tgtColId, blockId: tgtBlockId, position } = dropTarget;
 
-        let newRows = JSON.parse(JSON.stringify(activePage.rows));
+        let newRows = JSON.parse(JSON.stringify(rowsForEditor));
         let movedBlock = null;
-        
+
         // Remove the dragged block from its original position
         newRows.forEach(row => { row.columns.forEach(col => { const idx = col.blocks.findIndex(b => b.id === block.id); if (idx > -1) { movedBlock = col.blocks[idx]; col.blocks.splice(idx, 1); } }); });
         newRows.forEach(row => { row.columns = row.columns.filter(c => c.blocks.length > 0); });
@@ -3967,26 +4087,14 @@
          return map[colorName] || 'bg-white dark:bg-gray-900';
     }
 
-    const handleBlockHandleClick = (e, blockId) => {
-        e.stopPropagation();
-        if (selectedBlockId === blockId) {
-            const rect = e.currentTarget.getBoundingClientRect();
-            setBlockMenu({ id: blockId, top: rect.bottom + 5, left: rect.left });
-        } else {
-            setSelectedBlockId(blockId);
-            setBlockMenu(null);
-            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        }
-    }
-
     const updateBlockColor = (blockId, colorName) => {
-        updateBlock(blockId, { backgroundColor: colorName });
+        handleUpdateBlock(blockId, { backgroundColor: colorName });
         setBlockMenu(null);
     }
 
-    const findBlockById = (page, blockId) => {
-        if (!page) return null;
-        for (const row of page.rows) {
+    const findBlockInRows = (rows, blockId) => {
+        if (!rows || !rows.length) return null;
+        for (const row of rows) {
             for (const col of row.columns) {
                 const b = col.blocks.find(block => block.id === blockId);
                 if (b) return b;
@@ -3996,7 +4104,7 @@
     };
 
     const changeBlockType = (blockId, newType) => {
-        const block = findBlockById(activePage, blockId);
+        const block = findBlockInRows(rowsForEditor, blockId);
         if (!block) { setBlockMenu(null); return; }
         const cur = block.type;
         const curContent = block.content || '';
@@ -4046,7 +4154,7 @@
             updates.mimeType = null;
         }
 
-        updateBlock(blockId, updates);
+        handleUpdateBlock(blockId, updates);
         setBlockMenu(null);
         setAutoFocusId(blockId);
     }
@@ -4067,8 +4175,8 @@
         if (e.key === 'Enter') {
             e.preventDefault();
             e.target.blur();
-            if (activePage && activePage.rows.length > 0 && activePage.rows[0].columns.length > 0 && activePage.rows[0].columns[0].blocks.length > 0) {
-                setAutoFocusId(activePage.rows[0].columns[0].blocks[0].id);
+            if (rowsForEditor.length > 0 && rowsForEditor[0].columns.length > 0 && rowsForEditor[0].columns[0].blocks.length > 0) {
+                setAutoFocusId(rowsForEditor[0].columns[0].blocks[0].id);
             } else {
                 // If page is empty, create a new text block
                 addBlock('text');
@@ -4084,7 +4192,7 @@
               {!settings.condensedView && <span className="font-bold text-white flex items-center gap-2 text-lg"><Book size={18}/> Strata</span>}
               <button onClick={addNotebook} className="hover:bg-gray-800 p-1 rounded transition-colors" title="Add notebook"><Plus size={18} /></button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-2 space-y-1">
             {/* Favorites Section - Collapsible */}
             {getStarredPages().length > 0 && (
               <div className="mb-2">
@@ -4126,8 +4234,8 @@
             )}
             
             {data.notebooks.map((nb, index) => (
-              <div key={nb.id} className="group flex items-center gap-2" draggable={!editingNotebookId} onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'notebook', index)} title={settings.condensedView ? nb.name : undefined}>
-                   <div onClick={() => selectNotebook(nb.id)} className={`flex-1 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-colors ${activeNotebookId === nb.id ? 'bg-gray-800 text-white font-medium' : 'hover:bg-gray-800'}`}>
+              <div key={nb.id} className="group flex min-w-0 items-center gap-2 overflow-hidden" draggable={!editingNotebookId} onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'notebook', index)} title={settings.condensedView ? nb.name : undefined}>
+                   <div onClick={() => selectNotebook(nb.id)} className={`flex-1 min-w-0 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-all ${activeNotebookId === nb.id ? 'bg-gray-800 text-white font-medium border-l-2 border-l-blue-500' : 'hover:bg-gray-800 border-l-2 border-l-transparent'}`}>
                       <span 
                           className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${activeNotebookId === nb.id && !settings.condensedView ? 'cursor-pointer hover:bg-gray-700' : ''} rounded px-0.5 notebook-icon-trigger`} 
                           onClick={(e) => { 
@@ -4179,7 +4287,7 @@
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col h-full min-w-0">
+        <div className="flex-1 min-h-0 flex flex-col h-full min-w-0">
           {/* TABS BAR */}
           {activeNotebook ? (
                <div 
@@ -4198,7 +4306,7 @@
                  >
                      <div 
                          onClick={() => selectTab(tab.id)} 
-                         className={`${settings.condensedView ? 'px-2' : 'px-4'} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 tab-gloss overflow-hidden whitespace-nowrap ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-sm -mb-px` : `${getTabColorClasses(tab.color, false)}`}`} 
+                         className={`${settings.condensedView ? 'px-2' : 'px-4'} py-2 rounded-t-lg cursor-pointer flex items-center gap-2 tab-gloss overflow-hidden whitespace-nowrap transition-shadow ${activeTabId === tab.id ? `${getTabColorClasses(tab.color, true)} shadow-md -mb-px` : `${getTabColorClasses(tab.color, false)} shadow-none`}`} 
                          title={settings.condensedView ? tab.name : undefined}
                      >
                       <span 
@@ -4287,9 +4395,9 @@
               <div className="h-12 bg-gray-300 dark:bg-gray-800 border-b border-gray-400 dark:border-gray-700 flex items-center px-4 text-gray-500 dark:text-gray-400">Select a notebook</div>
           )}
 
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 min-h-0 flex overflow-hidden">
               {/* Main content area with cached iframes */}
-              <div className={`flex-1 relative ${(activePage?.embedUrl || activePage?.type === 'canvas') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+              <div className={`flex-1 min-h-0 relative ${(activePage?.embedUrl || activePage?.type === 'canvas') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
                       .filter(p => {
@@ -4568,7 +4676,7 @@
                                        <input ref={titleInputRef} className="text-4xl font-bold flex-1 outline-none placeholder-gray-300 py-3 leading-normal bg-transparent" value={activePage.name} onChange={(e) => updateLocalName('page', activePage.id, e.target.value)} onBlur={() => syncRenameToDrive('page', activePage.id)} onClick={(e) => e.target.select()} onKeyDown={handleTitleKeyDown} />
                                    </div>
                                    <div className="text-gray-400 text-xs mt-2 flex gap-4">
-                                      <span>Created: Today {new Date(activePage.createdAt).toLocaleDateString()} {new Date(activePage.createdAt).toLocaleTimeString()} • {activePage.rows.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0)} blocks</span>
+                                      <span>Created: Today {new Date(activePage.createdAt).toLocaleDateString()} {new Date(activePage.createdAt).toLocaleTimeString()} • {rowsForEditor.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0)} blocks</span>
                                    </div>
                               </div>
                               <div 
@@ -4628,63 +4736,39 @@
                                       // Otherwise, handle block drag-and-drop
                                       handleDrop(e);
                                   }}
-                                  onDragEnd={() => { setDraggedBlock(null); setDropTarget(null); }}
+                                  onDragEnd={handleBlockDragEnd}
                               >
-                                  {activePage.rows.map((row) => (
-                                      <div key={row.id} className="flex gap-4 group/row relative">
+                                  {(() => {
+                                      const totalBlocks = rowsForEditor.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0);
+                                      return rowsForEditor.map((row) => (
+                                          <div key={row.id} className="flex gap-4 group/row relative">
                                           {row.columns.map((col) => (
                                               <div key={col.id} className="flex-1 min-w-[50px] space-y-2">
-                                                  {col.blocks.map((block) => {
-                                                      // Calculate if this is the only block on the page (for backspace behavior)
-                                                      const totalBlocks = activePage.rows.reduce((acc, r) => 
-                                                          acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0);
-                                                      const isLastBlock = totalBlocks === 1;
-                                                      
-                                                      return (
-                                                          <BlockComponent 
-                                                              key={block.id} block={block} rowId={row.id} colId={col.id}
-                                                              onUpdate={(updates) => updateBlock(block.id, updates)}
-                                                              onDelete={() => removeBlock(block.id)}
-                                                              onInsertBelow={(type) => insertBlockAfter(block.id, type)}
-                                                              autoFocusId={autoFocusId}
-                                                              onRequestFocus={() => setAutoFocusId(block.id)}
-                                                              isSelected={selectedBlockId === block.id}
-                                                              onHandleClick={(e) => handleBlockHandleClick(e, block.id)}
-                                                              onFocus={() => { setSelectedBlockId(null); setBlockMenu(null); setAutoFocusId(null); }}
-                                                              onDragStart={(e) => { e.dataTransfer.setData('block_drag', JSON.stringify({ block, rowId: row.id, colId: col.id })); setDraggedBlock({ block, rowId: row.id, colId: col.id }); }}
-                                                              onDragOver={(e) => {
-                                                                  e.preventDefault(); e.stopPropagation();
-                                                                  if (!draggedBlock || draggedBlock.block.id === block.id) return;
-                                                                  const rect = e.currentTarget.getBoundingClientRect();
-                                                                  const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-                                                                  const w = rect.width; const h = rect.height;
-                                                                  let position = 'bottom';
-                                                                  
-                                                                  const dLeft = x; const dRight = w - x; const dTop = y; const dBottom = h - y;
-                                                                  let minD = dBottom; // Default strict bottom
-                                                                  
-                                                                  // More balanced sticky logic
-                                                                  if (dTop < h * 0.3) { minD = dTop; position = 'top'; }
-
-                                                                  const targetRow = activePage.rows.find(r => r.id === row.id);
-                                                                  const isMaxColumns = targetRow && targetRow.columns.length >= settings.maxColumns;
-                                                                  
-                                                                  if (!isMaxColumns) {
-                                                                      if (x < w * 0.2) position = 'left';
-                                                                      else if (x > w * 0.8) position = 'right';
-                                                                  }
-
-                                                                  setDropTarget({ rowId: row.id, colId: col.id, blockId: block.id, position });
-                                                              }}
-                                                              onDrop={handleDrop} dropTarget={dropTarget}
-                                                              isLastBlock={isLastBlock}
-                                                          />
-                                                      );
-                                                  })}
+                                                  {col.blocks.map((block) => (
+                                                      <BlockComponent 
+                                                          key={block.id}
+                                                          block={block}
+                                                          rowId={row.id}
+                                                          colId={col.id}
+                                                          onUpdate={handleUpdateBlock}
+                                                          onDelete={handleRemoveBlock}
+                                                          onInsertAfter={handleInsertBlockAfter}
+                                                          autoFocusId={autoFocusId}
+                                                          onRequestFocus={handleRequestFocus}
+                                                          isSelected={selectedBlockId === block.id}
+                                                          onHandleClick={handleBlockHandleClick}
+                                                          onFocus={handleBlockFocus}
+                                                          onDragStart={handleBlockDragStart}
+                                                          onDragOver={handleBlockDragOver}
+                                                          onDrop={handleDrop}
+                                                          dropTarget={dropTarget}
+                                                          isLastBlock={totalBlocks === 1}
+                                                      />
+                                                  ))}
                                               </div>
                                           ))}
                                       </div>
-                                  ))}
+                                  )); })()}
                               </div>
                               
                               <div className="mt-12 pb-20 opacity-50 hover:opacity-70 transition-opacity">
@@ -4711,7 +4795,15 @@
                           </div>
                       </div>
                       )
-                  ) : ( <div className="flex h-full items-center justify-center text-gray-400">Select a page</div> )}
+                  ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-400">
+                          <svg className="w-12 h-12 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <p className="text-sm font-medium">Select a page</p>
+                          <p className="text-xs text-gray-500">Choose a page from the list</p>
+                      </div>
+                  )}
               </div>
 
               {/* PAGES LIST */}
@@ -4765,7 +4857,7 @@
                               )}
                           </div>
                       </div>
-                      <div className="flex-1 overflow-y-auto">
+                      <div className="flex-1 min-h-0 overflow-y-auto">
                           {activeTab.pages.map((page, index) => (
                               <div key={page.id} id={`nav-page-${page.id}`} tabIndex={0} onKeyDown={(e) => handlePageKeyDown(e, page.id, index, activeTab.pages)}
                                   draggable={!editingPageId} onDragStart={(e) => handleNavDragStart(e, 'page', page.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'page', index)}
@@ -4805,7 +4897,7 @@
           )}
 
           {blockMenu && (() => {
-              const menuBlock = findBlockById(activePage, blockMenu.id);
+              const menuBlock = findBlockInRows(rowsForEditor, blockMenu.id);
               return menuBlock && (
               <div className="fixed bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-xl rounded-lg p-2 z-[9999] block-menu animate-fade-in" style={{ top: blockMenu.top, left: blockMenu.left }}>
                   <div className="mb-2">
