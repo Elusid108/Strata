@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.6";
+  const APP_VERSION = "2.4.7";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -310,6 +310,11 @@
     { cmd: 'link', aliases: ['link', 'url', 'bookmark'], label: 'Link', desc: 'Web bookmark', type: 'link' },
     { cmd: 'div', aliases: ['div', 'divider', 'hr', 'line'], label: 'Divider', desc: 'Horizontal line', type: 'divider' },
     { cmd: 'gdoc', aliases: ['gdoc', 'gdrive', 'google'], label: 'Google Drive File', desc: 'Embed Google Doc/Sheet/Slide', type: 'gdoc' },
+  ];
+
+  const BLOCK_TYPES = [
+    { type: 'text', label: 'Text' },
+    ...SLASH_COMMANDS.map(c => ({ type: c.type, label: c.label })),
   ];
 
   const BG_COLORS = {
@@ -1782,6 +1787,11 @@
         setPageZoomLevels(prev => ({ ...prev, [pageId]: clampedZoom }));
     };
 
+    const showZoomForEmbed = (page) =>
+        page?.embedUrl &&
+        page.embedUrl.includes('/preview') &&
+        (page.embedUrl.includes('/document/') || page.embedUrl.includes('/spreadsheets/'));
+
     // Toggle between edit and preview mode for Google pages
     const toggleViewMode = (pageId) => {
         setData(prev => ({
@@ -2843,6 +2853,73 @@
         setBlockMenu(null);
     }
 
+    const findBlockById = (page, blockId) => {
+        if (!page) return null;
+        for (const row of page.rows) {
+            for (const col of row.columns) {
+                const b = col.blocks.find(block => block.id === blockId);
+                if (b) return b;
+            }
+        }
+        return null;
+    };
+
+    const changeBlockType = (blockId, newType) => {
+        const block = findBlockById(activePage, blockId);
+        if (!block) { setBlockMenu(null); return; }
+        const cur = block.type;
+        const curContent = block.content || '';
+        const curUrl = block.url || '';
+        const textLike = ['text', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'todo', 'link'];
+        const isTextLike = (t) => textLike.includes(t);
+        const mediaStructural = ['image', 'video', 'divider', 'gdoc'];
+
+        const updates = { type: newType };
+
+        if (mediaStructural.includes(newType)) {
+            updates.content = '';
+            updates.url = '';
+            if (newType === 'gdoc') {
+                updates.driveFileId = null;
+                updates.webViewLink = null;
+                updates.mimeType = null;
+            }
+        } else {
+            updates.url = newType === 'link' ? curUrl : '';
+            updates.checked = newType === 'todo' ? (cur === 'todo' ? (block.checked === true) : false) : false;
+            if (isTextLike(cur) && isTextLike(newType)) {
+                if (['ul', 'ol'].includes(cur) && !['ul', 'ol'].includes(newType)) {
+                    const div = document.createElement('div');
+                    div.innerHTML = curContent;
+                    updates.content = (div.innerText || '').trim();
+                } else if (!['ul', 'ol'].includes(cur) && ['ul', 'ol'].includes(newType)) {
+                    const div = document.createElement('div');
+                    div.innerHTML = curContent;
+                    const plainText = (div.innerText || '').trim();
+                    updates.content = plainText ? `<li>${plainText}</li>` : '<li></li>';
+                } else {
+                    // Preserve full list HTML (all <li> items) when switching between ul and ol.
+                    updates.content = curContent;
+                }
+            } else if (isTextLike(cur) && newType === 'link') {
+                updates.content = curContent;
+                updates.url = curUrl;
+            } else {
+                updates.content = '';
+            }
+        }
+
+        if (newType !== 'gdoc') {
+            updates.driveFileId = null;
+            updates.webViewLink = null;
+            updates.mimeType = null;
+        }
+
+        updateBlock(blockId, updates);
+        setBlockMenu(null);
+        setAutoFocusId(blockId);
+    }
+
     const handlePageKeyDown = (e, pageId, index, pages) => {
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -3084,7 +3161,11 @@
               <div className={`flex-1 relative ${activePage?.embedUrl ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
-                      .filter(p => p.embedUrl && viewedEmbedPages.has(p.id))
+                      .filter(p => {
+                          if (!p.embedUrl || !viewedEmbedPages.has(p.id)) return false;
+                          if (activePage?.id === p.id && activePage?.embedUrl && showZoomForEmbed(activePage) && (getPageZoom(activePage.id) || 100) !== 100) return false;
+                          return true;
+                      })
                       .map(page => (
                           <iframe 
                               key={page.id}
@@ -3097,9 +3178,7 @@
                                   left: 0,
                                   right: 0,
                                   height: activePage?.id === page.id ? 'calc(100% - 52px)' : '100%',
-                                  transform: `scale(${(pageZoomLevels[page.id] || 100) / 100})`,
-                                  transformOrigin: 'top left',
-                                  width: `${100 / ((pageZoomLevels[page.id] || 100) / 100)}%`
+                                  width: '100%'
                               }}
                               allow="autoplay"
                           />
@@ -3172,7 +3251,8 @@
                                           <span className={`text-xs font-medium transition-colors ${activePage.embedUrl.includes('/preview') ? 'text-gray-600' : 'text-gray-400'}`}>Preview</span>
                                       </div>
                                   )}
-                                  {/* Zoom Controls */}
+                                  {/* Zoom Controls - only for Google Docs/Sheets in preview */}
+                                  {showZoomForEmbed(activePage) && (
                                   <div className="flex items-center gap-1 ml-2 border-l border-gray-200 pl-2">
                                       <button 
                                           onClick={() => setPageZoom(activePage.id, getPageZoom(activePage.id) - 25)}
@@ -3194,6 +3274,7 @@
                                           <Plus size={14} />
                                       </button>
                                   </div>
+                                  )}
                                   {/* URL Field */}
                                   <div className="flex items-center gap-1 ml-2">
                                       <span className="text-xs text-gray-400">URL:</span>
@@ -3224,8 +3305,31 @@
                                        activePage.type === 'pdf' ? 'PDF Document' : 'Embed'}
                                   </span>
                               </div>
-                              {/* Placeholder for iframe - actual iframes rendered at higher level for caching */}
-                              <div className="flex-1 w-full relative pointer-events-none" />
+                              {/* Zoom viewport (Docs/Sheets preview, zoom !== 100%) or placeholder for cached iframes */}
+                              {activePage.embedUrl && showZoomForEmbed(activePage) && (getPageZoom(activePage.id) || 100) !== 100 ? (
+                                  <div className="flex-1 min-h-0 w-full overflow-auto">
+                                      {(() => {
+                                          const zoom = getPageZoom(activePage.id) || 100;
+                                          return (
+                                              <div style={{ width: '100%', height: '100%' }}>
+                                                  <iframe
+                                                      src={activePage.embedUrl}
+                                                      className="border-0 block"
+                                                      style={{
+                                                          width: `${10000 / zoom}%`,
+                                                          height: `${10000 / zoom}%`,
+                                                          transform: `scale(${zoom / 100})`,
+                                                          transformOrigin: '0 0'
+                                                      }}
+                                                      allow="autoplay"
+                                                  />
+                                              </div>
+                                          );
+                                      })()}
+                                  </div>
+                              ) : (
+                                  <div className="flex-1 w-full relative pointer-events-none" />
+                              )}
                           </div>
                       ) : (
                       // Regular block page
@@ -3558,14 +3662,30 @@
               </div>
           )}
 
-          {blockMenu && (
-              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] block-menu animate-fade-in" style={{ top: blockMenu.top, left: blockMenu.left }}>
+          {blockMenu && (() => {
+              const menuBlock = findBlockById(activePage, blockMenu.id);
+              return menuBlock && (
+              <div className="fixed bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-xl rounded-lg p-2 z-[9999] block-menu animate-fade-in" style={{ top: blockMenu.top, left: blockMenu.left }}>
+                  <div className="mb-2">
+                      <div className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1.5">Change type</div>
+                      <select
+                          value={menuBlock.type}
+                          onChange={(e) => changeBlockType(blockMenu.id, e.target.value)}
+                          className="w-full text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                          {BLOCK_TYPES.map(({ type, label }) => (
+                              <option key={type} value={type}>{label}</option>
+                          ))}
+                      </select>
+                  </div>
+                  <div className="border-t border-gray-100 dark:border-gray-600 my-2"></div>
                   <div className="grid grid-cols-5 gap-2">
-                      <div onClick={() => updateBlockColor(blockMenu.id, null)} className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center cursor-pointer hover:bg-gray-100"><X size={10}/></div>
+                      <div onClick={() => updateBlockColor(blockMenu.id, null)} className="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-500 flex items-center justify-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"><X size={10}/></div>
                       {COLORS.map(c => ( <div key={c.name} onClick={() => updateBlockColor(blockMenu.id, c.name)} className={`w-5 h-5 rounded-full cursor-pointer bg-${c.name}-500 hover:scale-125 transition-transform shadow-sm`}></div> ))}
                   </div>
               </div>
-          )}
+              );
+          })()}
 
           {notebookIconPicker && (
               <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] notebook-icon-picker animate-fade-in w-64 h-64 overflow-y-auto" style={{ top: notebookIconPicker.top, left: notebookIconPicker.left }}>
