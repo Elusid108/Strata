@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.0";
+  const APP_VERSION = "2.5.2";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -1001,8 +1001,8 @@
         id={`container-${container.id}`}
         className={`absolute group flex flex-col ${isSelected ? 'z-30' : 'z-20'}`}
         style={{ 
-          left: container.x, 
-          top: container.y, 
+          left: container.x + 25000, 
+          top: container.y + 25000, 
           width: container.width ? `${container.width}px` : 'fit-content',
           maxWidth: container.type === 'text' ? '600px' : 'none',
           minWidth: '100px'
@@ -1314,7 +1314,7 @@
     const handleWheel = useCallback((e) => {
       const currentTransform = transformRef.current;
       if (e.altKey) {
-        e.preventDefault();
+        if (e.preventDefault) e.preventDefault();
         const zoomSensitivity = 0.001;
         const delta = -e.deltaY * zoomSensitivity;
         const newScale = Math.min(Math.max(0.1, currentTransform.scale + delta), 5);
@@ -1323,9 +1323,20 @@
         const mouseX = (e.clientX !== undefined ? e.clientX : rect.left + rect.width/2) - rect.left;
         const mouseY = (e.clientY !== undefined ? e.clientY : rect.top + rect.height/2) - rect.top;
 
-        const scaleRatio = newScale / currentTransform.scale;
-        const newX = mouseX - (mouseX - currentTransform.x) * scaleRatio;
-        const newY = mouseY - (mouseY - currentTransform.y) * scaleRatio;
+        // Account for canvas-background offset (-25000px)
+        // The transform is applied to a div positioned at -25000px
+        // Canvas point (cx, cy) appears at screen: (-25000 + x + cx * scale, -25000 + y + cy * scale)
+        // So canvas point under mouse: cx = (mouseX + 25000 - x) / scale
+        const canvasOffset = 25000;
+        
+        // Calculate the canvas point under the mouse (in canvas coordinate space)
+        const canvasPointX = (mouseX + canvasOffset - currentTransform.x) / currentTransform.scale;
+        const canvasPointY = (mouseY + canvasOffset - currentTransform.y) / currentTransform.scale;
+
+        // After zoom, keep same canvas point under mouse: mouseX = -25000 + newX + cx * newScale
+        // So: newX = mouseX + 25000 - cx * newScale
+        const newX = mouseX + canvasOffset - canvasPointX * newScale;
+        const newY = mouseY + canvasOffset - canvasPointY * newScale;
 
         setTransform({ x: newX, y: newY, scale: newScale });
       } else if (e.shiftKey) {
@@ -1348,10 +1359,46 @@
 
     const getCanvasCoords = (e) => {
       const rect = canvasRef.current.getBoundingClientRect();
+      const canvasOffset = 25000;
+      // Account for canvas-background offset (-25000px)
+      // Screen position (sx, sy) -> Canvas: (sx + offset - transform.x) / scale - offset
       return {
-        x: (e.clientX - rect.left - transform.x) / transform.scale,
-        y: (e.clientY - rect.top - transform.y) / transform.scale
+        x: (e.clientX - rect.left + canvasOffset - transform.x) / transform.scale - canvasOffset,
+        y: (e.clientY - rect.top + canvasOffset - transform.y) / transform.scale - canvasOffset
       };
+    };
+
+    // Viewport culling: calculate visible area in canvas coordinates
+    // Account for canvas-background offset (-25000px) and use transform ref for latest values
+    // Element at canvas (x,y) appears at screen: -25000 + transform.x + (x + 25000) * scale
+    // So canvas x = (screenX + 25000 - transform.x) / scale - 25000
+    const getViewportBounds = () => {
+      if (!canvasRef.current) return null;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const currentTransform = transformRef.current;
+      const canvasOffset = 25000;
+      const padding = 200; // Render slightly outside viewport for smooth scrolling
+      
+      // Convert viewport bounds from screen coordinates to canvas coordinates
+      const bounds = {
+        minX: (0 + canvasOffset - currentTransform.x - padding) / currentTransform.scale - canvasOffset,
+        minY: (0 + canvasOffset - currentTransform.y - padding) / currentTransform.scale - canvasOffset,
+        maxX: (rect.width + canvasOffset - currentTransform.x + padding) / currentTransform.scale - canvasOffset,
+        maxY: (rect.height + canvasOffset - currentTransform.y + padding) / currentTransform.scale - canvasOffset
+      };
+      
+      return bounds;
+    };
+
+    const isElementVisible = (x, y, width, height) => {
+      const viewport = getViewportBounds();
+      if (!viewport) return true; // Render all if viewport unknown
+      return !(
+        x + (width || 0) < viewport.minX ||
+        x > viewport.maxX ||
+        y + (height || 0) < viewport.minY ||
+        y > viewport.maxY
+      );
     };
 
     const handlePointerDown = (e) => {
@@ -1475,6 +1522,11 @@
           points: [...current.points, newPoint],
           bounds: newBounds
         };
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:1550',message:'Adding point to live draw',data:{newPoint,coords,updatedPathPoints:updatedPath.points,updatedPathBounds:updatedPath.bounds,transformX:transform.x,transformY:transform.y,transformScale:transform.scale},timestamp:Date.now(),sessionId:'debug-session',runId:'run7',hypothesisId:'I'})}).catch(()=>{});
+        // #endregion
+        
         setDrawInfo({ ...drawInfo, currentPath: updatedPath });
       }
     };
@@ -1497,6 +1549,11 @@
             width: p.bounds.maxX - p.bounds.minX, 
             height: p.bounds.maxY - p.bounds.minY,
         };
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:1581',message:'Finalizing path',data:{originalPath:p,finalPath,originalPoints:p.points,normalizedPoints,finalX,finalY,width:finalPath.width,height:finalPath.height},timestamp:Date.now(),sessionId:'debug-session',runId:'run7',hypothesisId:'I'})}).catch(()=>{});
+        // #endregion
+        
         setPaths([...paths, finalPath]);
       }
       setDragInfo(null);
@@ -1657,8 +1714,11 @@
             {['#000000', '#FF0000', '#0000FF', '#008000'].map(c => (
                <button
                   key={c}
-                  onClick={() => setBrushColor(c)}
-                  className={`w-6 h-6 rounded-full border border-gray-200 transition-transform ${brushColor === c ? 'scale-110 ring-2 ring-purple-400' : ''}`}
+                  onClick={() => tool !== 'eraser' && setBrushColor(c)}
+                  disabled={tool === 'eraser'}
+                  className={`w-6 h-6 rounded-full border border-gray-200 transition-transform 
+                     ${brushColor === c ? 'scale-110 ring-2 ring-purple-400' : ''}
+                     ${tool === 'eraser' ? 'opacity-50 cursor-not-allowed' : ''}`}
                   style={{ backgroundColor: c }}
                />
             ))}
@@ -1691,7 +1751,7 @@
     );
 
     return (
-      <div className="h-full w-full flex flex-col overflow-hidden font-sans bg-[#f8f8f8] text-gray-900">
+      <div className="h-full w-full flex flex-col overflow-hidden font-sans bg-[#f8f8f8] dark:bg-gray-800 text-gray-900 dark:text-gray-100">
         <style>{`
           ul { list-style-type: disc; padding-left: 20px; }
           ul ul { list-style-type: circle; padding-left: 20px; }
@@ -1706,7 +1766,7 @@
         `}</style>
 
         {/* Toolbar */}
-        <div className="py-2 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm shrink-0 z-50 justify-between select-none">
+        <div className="py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center px-4 shadow-sm shrink-0 z-50 justify-between select-none">
           <div className="flex items-center gap-2">
              <div className="flex bg-gray-100 rounded-lg p-1 gap-1 mr-4">
                 <ToolbarBtn active={tool === 'cursor'} onClick={() => setTool('cursor')} icon={<MousePointer2 size={18}/>} title="Select (V)" />
@@ -1746,17 +1806,19 @@
         >
            <div 
              id="canvas-background"
-             className="absolute origin-top-left w-full h-full"
+             className="absolute origin-top-left w-full h-full canvas-grid"
              style={{
+               left: '-25000px',
+               top: '-25000px',
                transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-               backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
                backgroundSize: '20px 20px',
+               backgroundPosition: `${(((-transform.x % 20) + 20) % 20)}px ${(((-transform.y % 20) + 20) % 20)}px`,
                width: '50000px',
                height: '50000px',
                pointerEvents: 'auto'
              }}
            >
-             <div className="absolute top-20 left-20 w-[600px] select-none pointer-events-none">
+             <div className="absolute w-[600px] select-none pointer-events-none" style={{ top: '25000px', left: '25000px' }}>
                <input 
                  value={pageTitle}
                  onChange={(e) => { 
@@ -1771,22 +1833,23 @@
                      onUpdate({ name: pageTitle });
                    }
                  }}
-                 className="text-5xl font-light text-gray-800 bg-transparent border-none outline-none w-full placeholder-gray-300 pointer-events-auto"
+                 className="text-5xl font-light text-gray-800 dark:text-gray-200 bg-transparent border-none outline-none w-full placeholder-gray-300 dark:placeholder-gray-500 pointer-events-auto"
                  placeholder="Page Title"
                />
-               <div className="text-sm text-gray-400 mt-2 flex gap-4">
+               <div className="text-sm text-gray-400 dark:text-gray-500 mt-2 flex gap-4">
                   <span>{currentDate.date}</span>
                   <span>{currentDate.time}</span>
                </div>
              </div>
 
              {/* Paths */}
-             {paths.map(p => (
+             {paths.filter(p => isElementVisible(p.x, p.y, p.width, p.height)).map(p => (
                 <div
                   key={p.id}
                   className={`absolute pointer-events-auto hover:ring-1 hover:ring-purple-200 ${selectedId === p.id && selectedType === 'path' ? 'ring-1 ring-purple-500 bg-purple-50/10' : ''}`}
-                  style={{ left: p.x, top: p.y, width: p.width, height: p.height, cursor: tool === 'cursor' ? 'move' : (tool === 'eraser' ? 'cell' : 'inherit') }}
+                  style={{ left: p.x + 25000, top: p.y + 25000, width: p.width, height: p.height, cursor: tool === 'cursor' ? 'move' : (tool === 'eraser' ? 'cell' : 'inherit') }}
                   onPointerDown={(e) => {
+                     if (e.button === 1) return; // Let middle mouse bubble to canvas for panning
                      if (tool === 'cursor') {
                         e.stopPropagation();
                         setSelectedId(p.id);
@@ -1813,18 +1876,21 @@
                 </div>
              ))}
 
-             {/* Active Draw */}
-             {drawInfo && drawInfo.isDrawing && (
-               <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible z-50">
+             {/* Active Draw - render live drawing path */}
+             {drawInfo && drawInfo.isDrawing && drawInfo.currentPath.points.length > 0 && (
+               <svg className="absolute pointer-events-none overflow-visible z-50" style={{ left: '0', top: '0', width: '50000px', height: '50000px' }}>
                  <g>
-                    <path d={getSvgPath(drawInfo.currentPath.points, drawInfo.currentPath.isArrow)} stroke={drawInfo.currentPath.color} strokeWidth={drawInfo.currentPath.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                    {drawInfo.currentPath.isArrow && <path d={getArrowHead(drawInfo.currentPath.points)} stroke={drawInfo.currentPath.color} strokeWidth={drawInfo.currentPath.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+                    <path d={getSvgPath(drawInfo.currentPath.points.map(p => ({ x: p.x + 25000, y: p.y + 25000 })), drawInfo.currentPath.isArrow)} stroke={drawInfo.currentPath.color} strokeWidth={drawInfo.currentPath.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    {drawInfo.currentPath.isArrow && <path d={getArrowHead(drawInfo.currentPath.points.map(p => ({ x: p.x + 25000, y: p.y + 25000 })))} stroke={drawInfo.currentPath.color} strokeWidth={drawInfo.currentPath.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
                  </g>
                </svg>
              )}
 
              {/* Containers */}
-             {containers.map(container => (
+             {containers.filter(container => {
+               const containerHeight = container.type === 'image' ? 200 : 100; // Approximate height
+               return isElementVisible(container.x, container.y, container.width || 200, containerHeight);
+             }).map(container => (
                <UniversalContainer
                  key={container.id}
                  container={container}
@@ -1833,6 +1899,7 @@
                  onSelect={() => { setSelectedId(container.id); setSelectedType('container'); }}
                  onUpdate={(fields) => setContainers(prev => prev.map(c => c.id === container.id ? { ...c, ...fields } : c))}
                  onDragStart={(e) => {
+                   if (e.button === 1) return; // Middle mouse only pans
                    e.stopPropagation();
                    pushToHistory();
                    setSelectedId(container.id);
@@ -4705,14 +4772,14 @@
                                   className={`page-item group flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} p-3 border-b cursor-pointer text-sm outline-none transition-all ${activePageId === page.id ? 'bg-gray-100 border-l-4 border-l-blue-500' : 'hover:bg-gray-50 border-l-4 border-l-transparent'}`}
                                   onClick={() => { if (activePageId === page.id) return; selectPage(page.id); }}
                                   title={settings.condensedView ? page.name : undefined}>
-                                  <span className={settings.condensedView ? 'text-xl' : 'mr-1'}>{page.icon || '📄'}</span>
+                                  <span className={settings.condensedView ? 'text-xl' : 'mr-1 flex-shrink-0'}>{page.icon || '📄'}</span>
                                   {!settings.condensedView && (activePageId === page.id && editingPageId === page.id ? (
-                                      <input className="flex-1 bg-transparent outline-none page-input" value={page.name} onChange={(e) => updateLocalName('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('page', page.id); setEditingPageId(null); }} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); }} autoFocus />
+                                      <input className="flex-1 min-w-0 bg-transparent outline-none page-input" value={page.name} onChange={(e) => updateLocalName('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('page', page.id); setEditingPageId(null); }} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); }} autoFocus />
                                   ) : ( 
-                                      <div className="flex-1 truncate" onClick={(e) => { if(activePageId === page.id) { e.stopPropagation(); setEditingPageId(page.id); } }}>{page.name}</div> 
+                                      <div className="flex-1 min-w-0 truncate" onClick={(e) => { if(activePageId === page.id) { e.stopPropagation(); setEditingPageId(page.id); } }}>{page.name}</div> 
                                   ))}
                                   {!settings.condensedView && (
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1 flex-shrink-0">
                                       <button onClick={(e) => { e.stopPropagation(); toggleStar(page.id, activeNotebookId, activeTabId); }} className={`${page.starred ? 'text-yellow-400' : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-yellow-400'} transition-all`} title={page.starred ? 'Remove from favorites' : 'Add to favorites'}>
                                         <Star size={14} filled={page.starred} />
                                       </button>

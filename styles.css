@@ -64,6 +64,15 @@ html.dark .tab-gloss {
     border-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Canvas grid pattern */
+.canvas-grid {
+    background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+}
+
+html.dark .canvas-grid {
+    background-image: radial-gradient(#4b5563 1px, transparent 1px);
+}
+
 /* Animations */
 @keyframes fade-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 .animate-fade-in { animation: fade-in 0.15s ease-out; }

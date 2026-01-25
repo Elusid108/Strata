@@ -114,6 +114,8 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.5.2** - Fixed canvas coordinate system: corrected zoom-to-mouse calculation, viewport bounds calculation, and coordinate transformations to account for canvas-background offset; fixed live drawing path visibility during pen tool usage
+- **v2.5.1** - Fixed canvas rendering issue: reverted dynamic grid that caused blank canvas screens, restored fixed 50000px grid, fixed live drawing path positioning for real-time feedback
 - **v2.5.0** - Canvas pages: infinite canvas with freeform drawing, text containers, image pasting, pan/zoom controls, transform state persistence per page, title syncing with page list
 - **v2.4.7** - Block menu "Change type" dropdown (transfer content between types); fix /div and list transfer when changing block types; zoom for Docs/Sheets preview only, fixed window (width and height), contents scale within
 - **v2.4.6** - Fixed /div slash command not creating divider blocks (stale closure race condition)
