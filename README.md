@@ -43,6 +43,7 @@ Strata/
 - **Google Drive Integration** - Cloud storage with automatic sync
 - **Google Drive File Embedding** - Embed Docs, Sheets, Slides via `/gdoc` command
 - **PDF Viewing** - Embed PDFs from URLs or Google Drive
+- **Canvas Pages** - Infinite canvas with freeform drawing, text containers, image pasting, pan/zoom with state persistence
 - **Local Storage Fallback** - Works offline without Google sign-in
 
 ## Data Storage
@@ -113,6 +114,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.5.0** - Canvas pages: infinite canvas with freeform drawing, text containers, image pasting, pan/zoom controls, transform state persistence per page, title syncing with page list
 - **v2.4.7** - Block menu "Change type" dropdown (transfer content between types); fix /div and list transfer when changing block types; zoom for Docs/Sheets preview only, fixed window (width and height), contents scale within
 - **v2.4.6** - Fixed /div slash command not creating divider blocks (stale closure race condition)
 - **v2.4.5** - Zoom controls for embedded Google Docs/Sheets/Slides pages

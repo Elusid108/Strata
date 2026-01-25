@@ -1,7 +1,7 @@
-  const { useState, useEffect, useRef } = React;
+  const { useState, useEffect, useRef, useLayoutEffect, useCallback } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.4.7";
+  const APP_VERSION = "2.5.0";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -264,6 +264,7 @@
   const Bold = (props) => <IconBase {...props}><path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/></IconBase>;
   const Italic = (props) => <IconBase {...props}><line x1="19" x2="10" y1="4" y2="4"/><line x1="14" x2="5" y1="20" y2="20"/><line x1="15" x2="9" y1="4" y2="20"/></IconBase>;
   const Underline = (props) => <IconBase {...props}><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></IconBase>;
+  const Strikethrough = (props) => <IconBase {...props}><path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" x2="20" y1="12" y2="12"/></IconBase>;
   const CheckSquare = (props) => <IconBase {...props}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></IconBase>;
   const Image = (props) => <IconBase {...props}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></IconBase>;
   const Moon = (props) => <IconBase {...props}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></IconBase>;
@@ -288,6 +289,19 @@
   const Edit3 = (props) => <IconBase {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></IconBase>;
   const FolderOpen = (props) => <IconBase {...props}><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></IconBase>;
   const FilePlus = (props) => <IconBase {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" x2="12" y1="18" y2="12"/><line x1="9" x2="15" y1="15" y2="15"/></IconBase>;
+  const GripHorizontal = (props) => <IconBase {...props}><circle cx="12" cy="9" r="1"/><circle cx="19" cy="9" r="1"/><circle cx="5" cy="9" r="1"/><circle cx="12" cy="15" r="1"/><circle cx="19" cy="15" r="1"/><circle cx="5" cy="15" r="1"/></IconBase>;
+  const MousePointer2 = (props) => <IconBase {...props}><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></IconBase>;
+  const Hand = (props) => <IconBase {...props}><path d="M18 11v-1a2 2 0 0 0-2-2h-1"/><path d="M14 10V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v1"/><path d="M10 9.5V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-4a8 8 0 0 1-8-8 2 2 0 0 1 2-2h7z"/></IconBase>;
+  const PenTool = (props) => <IconBase {...props}><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></IconBase>;
+  const Eraser = (props) => <IconBase {...props}><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></IconBase>;
+  const Undo = (props) => <IconBase {...props}><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.7L3 13"/></IconBase>;
+  const Redo = (props) => <IconBase {...props}><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.7L21 13"/></IconBase>;
+  const Highlighter = (props) => <IconBase {...props}><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L12.4 2"/></IconBase>;
+  const Move = (props) => <IconBase {...props}><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/></IconBase>;
+  const ArrowRight = (props) => <IconBase {...props}><line x1="5" x2="19" y1="12" y2="12"/><polyline points="12 5 19 12 12 19"/></IconBase>;
+  const ToggleLeft = (props) => <IconBase {...props}><rect x="1" y="5" width="22" height="14" rx="7" ry="7"/><circle cx="8" cy="12" r="3"/></IconBase>;
+  const Palette = (props) => <IconBase {...props}><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></IconBase>;
+  const Circle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/></IconBase>;
 
   // --- Constants & Utilities ---
   const COLORS = [
@@ -869,6 +883,981 @@
           </>
       )
   }
+
+  // --- Canvas Component ---
+  const getFormattedDate = () => {
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const timeOptions = { hour: 'numeric', minute: 'numeric' };
+    const now = new Date();
+    return {
+      date: now.toLocaleDateString('en-US', options),
+      time: now.toLocaleTimeString('en-US', timeOptions)
+    };
+  };
+
+  const SlashMenu = ({ x, y, onSelect, onClose }) => {
+    const options = [
+      { label: 'Heading 1', action: () => onSelect('formatBlock', 'H1') },
+      { label: 'Heading 2', action: () => onSelect('formatBlock', 'H2') },
+      { label: 'To-Do List', action: () => onSelect('insertHTML', '<input type="checkbox" style="margin-right:8px;vertical-align:middle;">&nbsp;') },
+      { label: 'Bullet List', action: () => onSelect('insertUnorderedList') },
+      { label: 'Numbered List', action: () => onSelect('insertOrderedList') },
+      { label: 'Insert Date', action: () => onSelect('insertText', new Date().toLocaleDateString()) },
+    ];
+
+    return (
+      <div 
+        className="fixed bg-white shadow-lg border border-gray-200 rounded-lg py-1 z-[100] w-48 animate-fade-in"
+        style={{ left: x, top: y + 20 }}
+      >
+        <div className="px-3 py-1 text-xs font-semibold text-gray-400 border-b mb-1">BASIC BLOCKS</div>
+        {options.map((opt, i) => (
+          <button
+            key={i}
+            className="w-full text-left px-3 py-1.5 hover:bg-purple-50 text-sm text-gray-700 flex items-center"
+            onMouseDown={(e) => { e.preventDefault(); opt.action(); }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const ToolbarBtn = ({ icon, onClick, active, title }) => (
+    <button 
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={`p-1 rounded-md transition-colors ${active ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100 text-gray-700'}`}
+      title={title}
+    >
+      {icon}
+    </button>
+  );
+
+  const UniversalContainer = ({ container, scale, isSelected, onSelect, onUpdate, onDragStart, onResizeStart, onDelete, onSlash }) => {
+    const contentRef = useRef(null);
+
+    useLayoutEffect(() => {
+      if (container.type === 'text' && contentRef.current && contentRef.current.innerHTML !== container.content) {
+         contentRef.current.innerHTML = container.content;
+      }
+    }, [container.content, container.type]);
+
+    const handleInput = (e) => {
+      if (contentRef.current) {
+        const val = contentRef.current.innerHTML;
+        if (val.trim() === '/') {
+           const rect = contentRef.current.getBoundingClientRect();
+           onSlash(rect.left, rect.bottom);
+        }
+        onUpdate({ content: val });
+      }
+    };
+
+    const handleContentClick = (e) => {
+      if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
+        const checkbox = e.target;
+        if (checkbox.checked) {
+          checkbox.setAttribute('checked', 'true');
+          const parent = checkbox.parentElement;
+          const isSharedParent = parent.querySelectorAll('input[type="checkbox"]').length > 1;
+          if (parent && parent !== contentRef.current && !isSharedParent) {
+               parent.style.textDecoration = 'line-through';
+               parent.style.color = '#9ca3af'; 
+          }
+        } else {
+          checkbox.removeAttribute('checked');
+          if (checkbox.parentElement && checkbox.parentElement !== contentRef.current) {
+               checkbox.parentElement.style.textDecoration = 'none';
+               checkbox.parentElement.style.color = 'inherit';
+          }
+        }
+        if (contentRef.current) {
+          onUpdate({ content: contentRef.current.innerHTML });
+        }
+      }
+    };
+
+    const handleKeyDown = (e) => {
+       if (e.key === 'Tab') {
+         e.preventDefault();
+         document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+       }
+       if (e.key === 'Enter') {
+          const selection = window.getSelection();
+          const anchorNode = selection.anchorNode;
+          const parentBlock = anchorNode.nodeType === 3 ? anchorNode.parentNode : anchorNode;
+          const currentLine = parentBlock.closest('div') || parentBlock;
+          if (currentLine.innerHTML && currentLine.innerHTML.includes('type="checkbox"')) {
+               e.preventDefault();
+               document.execCommand('insertParagraph');
+               document.execCommand('insertHTML', false, '<input type="checkbox" style="margin-right:8px;vertical-align:middle;">&nbsp;');
+          }
+       }
+    };
+
+    return (
+      <div 
+        id={`container-${container.id}`}
+        className={`absolute group flex flex-col ${isSelected ? 'z-30' : 'z-20'}`}
+        style={{ 
+          left: container.x, 
+          top: container.y, 
+          width: container.width ? `${container.width}px` : 'fit-content',
+          maxWidth: container.type === 'text' ? '600px' : 'none',
+          minWidth: '100px'
+        }}
+        onClick={(e) => { e.stopPropagation(); onSelect(); }}
+      >
+        <div 
+          className={`h-4 w-full bg-gray-50 border border-gray-200 border-b-0 rounded-t cursor-move flex items-center justify-center transition-opacity
+            ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+          `}
+          onMouseDown={onDragStart}
+        >
+          <GripHorizontal size={12} className="text-gray-400" />
+        </div>
+
+        <div className={`
+          relative bg-white shadow-sm
+          ${isSelected ? 'border border-gray-300 ring-1 ring-purple-500/20' : 'border border-transparent hover:border-gray-200'}
+        `}>
+           {isSelected && (
+             <>
+               <button onClick={(e) => {e.stopPropagation(); onDelete()}} className="absolute -right-2 -top-2 bg-white rounded-full p-1 shadow border hover:bg-red-50 text-gray-400 hover:text-red-500 z-50">
+                 <X size={10} />
+               </button>
+               <div 
+                 className="absolute top-0 right-[-6px] h-full w-4 cursor-ew-resize flex items-center justify-center z-40 opacity-0 hover:opacity-100"
+                 onMouseDown={onResizeStart}
+               >
+                  <div className="w-1 h-8 bg-blue-300 rounded-full"/>
+               </div>
+             </>
+           )}
+
+           {container.type === 'text' ? (
+             <div
+               id={`editor-${container.id}`}
+               ref={contentRef}
+               contentEditable
+               suppressContentEditableWarning
+               className="outline-none px-3 py-2 min-h-[1em]"
+               onInput={handleInput}
+               onClick={handleContentClick}
+               onKeyDown={handleKeyDown}
+               onBlur={handleInput}
+               style={{ cursor: 'text' }}
+             />
+           ) : (
+             <div className="p-1">
+               <img src={container.content} alt="Pasted" className="w-full h-auto pointer-events-none" />
+             </div>
+           )}
+        </div>
+      </div>
+    );
+  };
+
+  const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }) => {
+    const canvasData = page.canvasData || { containers: [], paths: [], pageTitle: page.name || 'Untitled Page', transform: { x: 0, y: 0, scale: 1 } };
+    
+    // State
+    const [containers, setContainers] = useState(canvasData.containers || []);
+    const [paths, setPaths] = useState(canvasData.paths || []);
+    const [pageTitle, setPageTitle] = useState(canvasData.pageTitle || page.name || 'Untitled Page');
+    const [history, setHistory] = useState({ past: [], future: [] });
+    const [appClipboard, setAppClipboard] = useState(null);
+    const [transform, setTransform] = useState(canvasData.transform || { x: 0, y: 0, scale: 1 });
+    const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
+    const [tool, setTool] = useState('cursor');
+    const [selectedId, setSelectedId] = useState(null);
+    const [selectedType, setSelectedType] = useState(null);
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const [slashMenu, setSlashMenu] = useState(null);
+    const [brushColor, setBrushColor] = useState('#000000');
+    const [brushWidth, setBrushWidth] = useState(2);
+    const [dragInfo, setDragInfo] = useState(null);
+    const [resizeInfo, setResizeInfo] = useState(null);
+    const [drawInfo, setDrawInfo] = useState(null);
+    const canvasRef = useRef(null);
+    const [currentDate] = useState(getFormattedDate());
+
+    // Initialize from page data when page changes
+    useEffect(() => {
+      const data = page.canvasData || {};
+      setContainers(data.containers || []);
+      setPaths(data.paths || []);
+      // Sync pageTitle with page.name - use page.name as source of truth if canvasData.pageTitle doesn't exist
+      const title = data.pageTitle || page.name || 'Untitled Page';
+      setPageTitle(title);
+      // Load transform state or default to center view
+      setTransform(data.transform || { x: 0, y: 0, scale: 1 });
+      
+      // Initialize with default container if no data exists
+      if (!data.containers || data.containers.length === 0) {
+        setContainers([
+          { id: generateId(), type: 'text', x: 100, y: 180, content: '<div>Click anywhere to start typing...</div>', width: null }
+        ]);
+      }
+    }, [page.id]);
+
+    // Sync pageTitle with page.name when page.name changes externally
+    useEffect(() => {
+      if (page.name && page.name !== pageTitle) {
+        setPageTitle(page.name);
+      }
+    }, [page.name]);
+
+    // Save to page data (including transform)
+    useEffect(() => {
+      onUpdate({ 
+        canvasData: { 
+          containers, 
+          paths, 
+          pageTitle,
+          transform 
+        },
+        name: pageTitle // Sync page name with canvas title
+      });
+    }, [containers, paths, pageTitle, transform]);
+
+    // History management
+    const pushToHistory = () => {
+      setHistory(prev => ({
+        past: [...prev.past, { containers, paths }],
+        future: []
+      }));
+    };
+
+    const undo = () => {
+      if (history.past.length === 0) return;
+      const previous = history.past[history.past.length - 1];
+      const newPast = history.past.slice(0, -1);
+      
+      setHistory({
+        past: newPast,
+        future: [{ containers, paths }, ...history.future]
+      });
+      
+      setContainers(previous.containers);
+      setPaths(previous.paths);
+    };
+
+    const redo = () => {
+      if (history.future.length === 0) return;
+      const next = history.future[0];
+      const newFuture = history.future.slice(1);
+      
+      setHistory({
+        past: [...history.past, { containers, paths }],
+        future: newFuture
+      });
+      
+      setContainers(next.containers);
+      setPaths(next.paths);
+    };
+
+    // Clipboard operations
+    const handleCopy = () => {
+      if (!selectedId) return;
+      if (selectedType === 'container' && window.getSelection().toString().length > 0) {
+        return; 
+      }
+      if (selectedType === 'container') {
+        const item = containers.find(c => c.id === selectedId);
+        if (item) setAppClipboard({ type: 'container', data: item });
+      } else if (selectedType === 'path') {
+        const item = paths.find(p => p.id === selectedId);
+        if (item) setAppClipboard({ type: 'path', data: item });
+      }
+    };
+
+    const handleCut = () => {
+      if (!selectedId) return;
+      if (selectedType === 'container' && window.getSelection().toString().length > 0) return;
+      handleCopy();
+      pushToHistory();
+      if (selectedType === 'container') {
+        setContainers(prev => prev.filter(c => c.id !== selectedId));
+      } else {
+        setPaths(prev => prev.filter(p => p.id !== selectedId));
+      }
+      setSelectedId(null);
+      setSelectedType(null);
+    };
+
+    const handleAppPaste = () => {
+      if (!appClipboard) return;
+      pushToHistory();
+      const newId = generateId();
+      if (appClipboard.type === 'container') {
+        const newContainer = {
+          ...appClipboard.data,
+          id: newId,
+          x: appClipboard.data.x + 20,
+          y: appClipboard.data.y + 20
+        };
+        setContainers(prev => [...prev, newContainer]);
+        setSelectedId(newId);
+        setSelectedType('container');
+      } else if (appClipboard.type === 'path') {
+        const newPath = {
+          ...appClipboard.data,
+          id: newId,
+          x: appClipboard.data.x + 20,
+          y: appClipboard.data.y + 20
+        };
+        setPaths(prev => [...prev, newPath]);
+        setSelectedId(newId);
+        setSelectedType('path');
+      }
+    };
+
+    // Global event listeners
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (e.altKey && e.key === '0') {
+          e.preventDefault();
+          setTransform({ x: 0, y: 0, scale: 1 });
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+          handleCopy();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+          handleCut();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+          if (appClipboard && document.activeElement.tagName !== 'DIV' && document.activeElement.contentEditable !== 'true') {
+             e.preventDefault();
+             handleAppPaste();
+          }
+        }
+        if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'DIV') {
+          setIsSpacePressed(true);
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+           if (selectedType === 'path' && selectedId) {
+              pushToHistory();
+              setPaths(prev => prev.filter(p => p.id !== selectedId));
+              setSelectedId(null);
+              setSelectedType(null);
+           } else if (selectedType === 'container' && selectedId && document.activeElement.tagName !== 'DIV') {
+              pushToHistory();
+              setContainers(prev => prev.filter(c => c.id !== selectedId));
+              setSelectedId(null);
+              setSelectedType(null);
+           }
+        }
+      };
+      
+      const handleKeyUp = (e) => {
+        if (e.code === 'Space') setIsSpacePressed(false);
+      };
+      
+      const handlePaste = async (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            pushToHistory();
+            const blob = items[i].getAsFile();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+               const viewportCenterX = (window.innerWidth / 2 - transform.x) / transform.scale;
+               const viewportCenterY = (window.innerHeight / 2 - transform.y) / transform.scale;
+               
+               const newContainer = {
+                 id: generateId(),
+                 type: 'image',
+                 x: viewportCenterX - 100,
+                 y: viewportCenterY - 100,
+                 content: event.target.result,
+                 width: 300
+               };
+               setContainers(prev => [...prev, newContainer]);
+            };
+            reader.readAsDataURL(blob);
+          }
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
+      window.addEventListener('paste', handlePaste);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
+        window.removeEventListener('paste', handlePaste);
+      };
+    }, [transform, selectedId, selectedType, history, appClipboard, containers, paths]);
+
+    // Viewport logic - use useCallback to memoize and use ref for latest transform
+    const transformRef = useRef(transform);
+    useEffect(() => {
+      transformRef.current = transform;
+    }, [transform]);
+
+    const handleWheel = useCallback((e) => {
+      const currentTransform = transformRef.current;
+      if (e.altKey) {
+        e.preventDefault();
+        const zoomSensitivity = 0.001;
+        const delta = -e.deltaY * zoomSensitivity;
+        const newScale = Math.min(Math.max(0.1, currentTransform.scale + delta), 5);
+        
+        const rect = canvasRef.current ? canvasRef.current.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+        const mouseX = (e.clientX !== undefined ? e.clientX : rect.left + rect.width/2) - rect.left;
+        const mouseY = (e.clientY !== undefined ? e.clientY : rect.top + rect.height/2) - rect.top;
+
+        const scaleRatio = newScale / currentTransform.scale;
+        const newX = mouseX - (mouseX - currentTransform.x) * scaleRatio;
+        const newY = mouseY - (mouseY - currentTransform.y) * scaleRatio;
+
+        setTransform({ x: newX, y: newY, scale: newScale });
+      } else if (e.shiftKey) {
+        setTransform(prev => ({ ...prev, x: prev.x - e.deltaY }));
+      } else {
+        setTransform(prev => ({ ...prev, y: prev.y - e.deltaY }));
+      }
+    }, []);
+
+    // Attach wheel event listener with non-passive option to allow preventDefault
+    useEffect(() => {
+      const canvasElement = canvasRef.current;
+      if (!canvasElement) return;
+
+      canvasElement.addEventListener('wheel', handleWheel, { passive: false });
+      return () => {
+        canvasElement.removeEventListener('wheel', handleWheel);
+      };
+    }, [handleWheel]);
+
+    const getCanvasCoords = (e) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left - transform.x) / transform.scale,
+        y: (e.clientY - rect.top - transform.y) / transform.scale
+      };
+    };
+
+    const handlePointerDown = (e) => {
+      if(e.target.setPointerCapture) {
+          e.target.setPointerCapture(e.pointerId);
+      }
+
+      const coords = getCanvasCoords(e);
+      
+      if (isSpacePressed || tool === 'hand' || e.button === 1) {
+        e.preventDefault();
+        setDragInfo({
+          type: 'pan',
+          startX: e.clientX,
+          startY: e.clientY,
+          initialTransform: { ...transform }
+        });
+        return;
+      }
+
+      if (tool === 'pen') {
+        pushToHistory();
+        const newPath = {
+          id: generateId(),
+          points: [{ x: coords.x, y: coords.y }],
+          color: brushColor,
+          strokeWidth: brushWidth / transform.scale,
+          isArrow: e.shiftKey,
+          bounds: { minX: coords.x, minY: coords.y, maxX: coords.x, maxY: coords.y },
+          x: 0, y: 0 
+        };
+        setDrawInfo({ isDrawing: true, currentPath: newPath });
+        setSelectedId(null);
+        setSelectedType(null);
+        return;
+      }
+
+      if (tool === 'eraser') return;
+
+      if (e.target.id === 'canvas-background' && e.button === 0) {
+        pushToHistory();
+        setSelectedId(null);
+        setSelectedType(null);
+
+        const newId = generateId();
+        const newContainer = {
+          id: newId,
+          type: 'text',
+          x: coords.x - 10,
+          y: coords.y - 10,
+          content: '',
+          width: null
+        };
+        setContainers([...containers, newContainer]);
+        setSelectedId(newId);
+        setSelectedType('container');
+        setTimeout(() => {
+          const el = document.getElementById(`editor-${newId}`);
+          if (el) el.focus();
+        }, 50);
+      }
+    };
+
+    const handlePointerMove = (e) => {
+      const coords = getCanvasCoords(e);
+      setCursorPos(coords);
+
+      if (dragInfo && dragInfo.type === 'pan') {
+        const dx = e.clientX - dragInfo.startX;
+        const dy = e.clientY - dragInfo.startY;
+        setTransform({
+          ...transform,
+          x: dragInfo.initialTransform.x + dx,
+          y: dragInfo.initialTransform.y + dy
+        });
+        return;
+      }
+
+      if (dragInfo && dragInfo.type === 'container') {
+         const dx = (e.clientX - dragInfo.startX) / transform.scale;
+         const dy = (e.clientY - dragInfo.startY) / transform.scale;
+         setContainers(prev => prev.map(c => 
+           c.id === dragInfo.id 
+             ? { ...c, x: dragInfo.initialX + dx, y: dragInfo.initialY + dy }
+             : c
+         ));
+         return;
+      }
+
+      if (dragInfo && dragInfo.type === 'path') {
+         const dx = (e.clientX - dragInfo.startX) / transform.scale;
+         const dy = (e.clientY - dragInfo.startY) / transform.scale;
+         setPaths(prev => prev.map(p => 
+           p.id === dragInfo.id 
+             ? { ...p, x: dragInfo.initialX + dx, y: dragInfo.initialY + dy }
+             : p
+         ));
+         return;
+      }
+
+      if (resizeInfo) {
+        const dx = (e.clientX - resizeInfo.startX) / transform.scale;
+        const newWidth = Math.max(100, resizeInfo.initialWidth + dx);
+        setContainers(prev => prev.map(c => 
+          c.id === resizeInfo.id ? { ...c, width: newWidth } : c
+        ));
+        return;
+      }
+
+      if (drawInfo && drawInfo.isDrawing) {
+        const newPoint = { x: coords.x, y: coords.y };
+        const current = drawInfo.currentPath;
+        const newBounds = {
+            minX: Math.min(current.bounds.minX, newPoint.x),
+            minY: Math.min(current.bounds.minY, newPoint.y),
+            maxX: Math.max(current.bounds.maxX, newPoint.x),
+            maxY: Math.max(current.bounds.maxY, newPoint.y)
+        };
+        const updatedPath = { 
+          ...current, 
+          points: [...current.points, newPoint],
+          bounds: newBounds
+        };
+        setDrawInfo({ ...drawInfo, currentPath: updatedPath });
+      }
+    };
+
+    const handlePointerUp = (e) => {
+      if (e.target.releasePointerCapture) {
+          e.target.releasePointerCapture(e.pointerId);
+      }
+
+      if (drawInfo && drawInfo.isDrawing) {
+        const p = drawInfo.currentPath;
+        const finalX = p.bounds.minX;
+        const finalY = p.bounds.minY;
+        const normalizedPoints = p.points.map(pt => ({ x: pt.x - finalX, y: pt.y - finalY }));
+        const finalPath = {
+            ...p,
+            points: normalizedPoints,
+            x: finalX,
+            y: finalY,
+            width: p.bounds.maxX - p.bounds.minX, 
+            height: p.bounds.maxY - p.bounds.minY,
+        };
+        setPaths([...paths, finalPath]);
+      }
+      setDragInfo(null);
+      setResizeInfo(null);
+      setDrawInfo(null);
+    };
+
+    const execCmd = (command, value = null) => {
+      document.execCommand(command, false, value);
+      if (selectedId && selectedType === 'container') {
+         const el = document.getElementById(`editor-${selectedId}`);
+         if(el) el.focus();
+      }
+    };
+
+    const handleList = (command) => {
+      pushToHistory();
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+      const container = document.getElementById(`editor-${selectedId}`);
+      if (container) {
+        const inputs = container.querySelectorAll('input[type="checkbox"]');
+        inputs.forEach(input => {
+            if (selection.containsNode(input, true) || selection.anchorNode.parentNode === input.parentNode) {
+                if (input.parentElement) {
+                    input.parentElement.style.textDecoration = 'none';
+                    input.parentElement.style.color = 'inherit';
+                }
+                input.remove();
+            }
+        });
+      }
+      execCmd(command);
+      if (container) {
+         const cleanInputs = container.querySelectorAll('input[type="checkbox"]');
+         cleanInputs.forEach(input => { if (input.closest('li')) input.remove(); });
+      }
+    };
+
+    const handleMakeTodo = () => {
+      pushToHistory();
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+
+      let anchor = selection.anchorNode;
+      let li = null;
+      let curr = anchor;
+      while(curr && curr.parentNode) {
+          if (curr.id && curr.id.startsWith('editor-')) break;
+          if (curr.tagName === 'LI') { li = curr; break; }
+          curr = curr.parentNode;
+      }
+
+      if (li) {
+          const parentList = li.parentNode;
+          const cmd = parentList.tagName === 'OL' ? 'insertOrderedList' : 'insertUnorderedList';
+          document.execCommand(cmd); 
+      }
+
+      if (selection.isCollapsed) {
+         document.execCommand('insertHTML', false, '<input type="checkbox" style="margin-right:8px;vertical-align:middle;">&nbsp;');
+      } else {
+         const text = selection.toString();
+         if (text) {
+           const startMarkerId = `start-marker-${generateId()}`;
+           const endMarkerId = `end-marker-${generateId()}`;
+           const lines = text.split('\n');
+           const html = `<span id="${startMarkerId}"></span>` + 
+                        lines.map(line => `<div><input type="checkbox" style="margin-right:8px;vertical-align:middle;">&nbsp;${line}</div>`).join('') + 
+                        `<span id="${endMarkerId}"></span>`;
+
+           document.execCommand('insertHTML', false, html);
+           
+           const startEl = document.getElementById(startMarkerId);
+           const endEl = document.getElementById(endMarkerId);
+           if (startEl && endEl) {
+               const range = document.createRange();
+               range.setStartAfter(startEl);
+               range.setEndBefore(endEl);
+               selection.removeAllRanges();
+               selection.addRange(range);
+               startEl.parentNode.removeChild(startEl);
+               endEl.parentNode.removeChild(endEl);
+           }
+         } else {
+           document.execCommand('insertHTML', false, '<input type="checkbox" style="margin-right:8px;vertical-align:middle;">&nbsp;');
+         }
+      }
+      if (selectedId) {
+        const el = document.getElementById(`editor-${selectedId}`);
+        if(el) el.focus();
+      }
+    };
+
+    const handleSlashCommand = (command, value) => {
+      if (command === 'formatBlock') {
+        execCmd(command, value);
+      } else if (command === 'insertHTML') {
+        execCmd(command, value);
+      } else if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
+        handleList(command);
+      } else if (command === 'insertText') {
+        execCmd('insertText', value);
+      }
+      setSlashMenu(null);
+    };
+
+    const getSvgPath = (points, isArrow) => {
+      if (points.length < 2) return '';
+      if (isArrow) {
+         const start = points[0];
+         const end = points[points.length - 1];
+         return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+      }
+      let d = `M ${points[0].x} ${points[0].y}`;
+      for (let i = 1; i < points.length; i++) {
+         d += ` L ${points[i].x} ${points[i].y}`;
+      }
+      return d;
+    };
+
+    const getArrowHead = (points) => {
+      if (points.length < 2) return null;
+      const end = points[points.length - 1];
+      const start = points[0];
+      const angle = Math.atan2(end.y - start.y, end.x - start.x);
+      const headLen = 10;
+      const x1 = end.x - headLen * Math.cos(angle - Math.PI / 6);
+      const y1 = end.y - headLen * Math.sin(angle - Math.PI / 6);
+      const x2 = end.x - headLen * Math.cos(angle + Math.PI / 6);
+      const y2 = end.y - headLen * Math.sin(angle + Math.PI / 6);
+      return `M ${end.x} ${end.y} L ${x1} ${y1} M ${end.x} ${end.y} L ${x2} ${y2}`;
+    };
+
+    const renderDefaultToolbar = () => (
+      <div className="flex gap-1 items-center">
+         <div className="flex gap-1 border-r border-gray-300 pr-2 mr-1">
+           <ToolbarBtn icon={<Bold size={18}/>} onClick={() => execCmd('bold')} />
+           <ToolbarBtn icon={<Italic size={18}/>} onClick={() => execCmd('italic')} />
+           <ToolbarBtn icon={<Underline size={18}/>} onClick={() => execCmd('underline')} />
+           <ToolbarBtn icon={<Strikethrough size={18}/>} onClick={() => execCmd('strikeThrough')} />
+         </div>
+         <div className="flex gap-1 border-r border-gray-300 pr-2 mr-1">
+           <ToolbarBtn icon={<CheckSquare size={18}/>} onClick={handleMakeTodo} />
+           <ToolbarBtn icon={<List size={18}/>} onClick={() => handleList('insertUnorderedList')} />
+           <ToolbarBtn icon={<ListOrdered size={18}/>} onClick={() => handleList('insertOrderedList')} />
+         </div>
+         <div className="flex gap-1">
+           <ToolbarBtn icon={<Undo size={18}/>} onClick={undo} title="Undo (Ctrl+Z)" />
+           <ToolbarBtn icon={<Redo size={18}/>} onClick={redo} title="Redo (Ctrl+Y)" />
+         </div>
+      </div>
+    );
+
+    const renderDrawToolbar = () => (
+      <div className="flex gap-3 items-center">
+         <div className="flex gap-1 border-r border-gray-300 pr-3">
+            {['#000000', '#FF0000', '#0000FF', '#008000'].map(c => (
+               <button
+                  key={c}
+                  onClick={() => setBrushColor(c)}
+                  className={`w-6 h-6 rounded-full border border-gray-200 transition-transform ${brushColor === c ? 'scale-110 ring-2 ring-purple-400' : ''}`}
+                  style={{ backgroundColor: c }}
+               />
+            ))}
+         </div>
+         <div className="flex items-center gap-2 border-r border-gray-300 pr-3">
+            <div className="w-1 h-1 bg-black rounded-full"/>
+            <input 
+              type="range" 
+              min="1" 
+              max="10" 
+              value={brushWidth} 
+              onChange={(e) => setBrushWidth(parseInt(e.target.value))}
+              className="w-24 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+            />
+            <div className="w-3 h-3 bg-black rounded-full"/>
+         </div>
+         <div className="flex gap-1 border-r border-gray-300 pr-3">
+            <ToolbarBtn 
+               icon={<Eraser size={18} className={tool === 'eraser' ? 'text-red-600' : ''}/>} 
+               onClick={() => setTool(tool === 'eraser' ? 'pen' : 'eraser')} 
+               active={tool === 'eraser'}
+               title="Eraser Mode"
+            />
+         </div>
+         <div className="flex gap-1">
+           <ToolbarBtn icon={<Undo size={18}/>} onClick={undo} title="Undo (Ctrl+Z)" />
+           <ToolbarBtn icon={<Redo size={18}/>} onClick={redo} title="Redo (Ctrl+Y)" />
+         </div>
+      </div>
+    );
+
+    return (
+      <div className="h-full w-full flex flex-col overflow-hidden font-sans bg-[#f8f8f8] text-gray-900">
+        <style>{`
+          ul { list-style-type: disc; padding-left: 20px; }
+          ul ul { list-style-type: circle; padding-left: 20px; }
+          ul ul ul { list-style-type: square; padding-left: 20px; }
+          ol { list-style-type: decimal; padding-left: 20px; }
+          ol ol { list-style-type: lower-alpha; padding-left: 20px; }
+          ol ol ol { list-style-type: lower-roman; padding-left: 20px; }
+          input[type=range]::-webkit-slider-thumb {
+             -webkit-appearance: none; height: 12px; width: 12px; border-radius: 50%;
+             background: #7e22ce; cursor: pointer; margin-top: -4px;
+          }
+        `}</style>
+
+        {/* Toolbar */}
+        <div className="py-2 bg-white border-b border-gray-200 flex items-center px-4 shadow-sm shrink-0 z-50 justify-between select-none">
+          <div className="flex items-center gap-2">
+             <div className="flex bg-gray-100 rounded-lg p-1 gap-1 mr-4">
+                <ToolbarBtn active={tool === 'cursor'} onClick={() => setTool('cursor')} icon={<MousePointer2 size={18}/>} title="Select (V)" />
+                <ToolbarBtn active={tool === 'hand' || isSpacePressed} onClick={() => setTool('hand')} icon={<Hand size={18}/>} title="Pan (Space / Middle Mouse)" />
+                <ToolbarBtn active={tool === 'pen' || tool === 'eraser'} onClick={() => setTool('pen')} icon={<PenTool size={18} className={tool === 'pen' || tool === 'eraser' ? 'text-purple-600' : ''}/>} title="Draw (P)" />
+             </div>
+             <div className="h-6 w-[1px] bg-gray-300 mx-2"/>
+             {(tool === 'pen' || tool === 'eraser') ? renderDrawToolbar() : renderDefaultToolbar()}
+          </div>
+          <div className="flex items-center gap-4 text-sm text-gray-500">
+             <div className="flex items-center gap-2 bg-gray-50 px-2 py-1 rounded border">
+                <span className="text-xs font-mono">{Math.round(transform.scale * 100)}%</span>
+                <div className="flex gap-1">
+                   <button className="hover:bg-gray-200 p-0.5 rounded" onClick={() => handleWheel({altKey: true, deltaY: 100, clientX: window.innerWidth/2, clientY: window.innerHeight/2, preventDefault: () => {}})}>
+                     <ZoomOut size={14}/>
+                   </button>
+                   <button className="hover:bg-gray-200 p-0.5 rounded" onClick={() => handleWheel({altKey: true, deltaY: -100, clientX: window.innerWidth/2, clientY: window.innerHeight/2, preventDefault: () => {}})}>
+                     <ZoomIn size={14}/>
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+
+        {/* Canvas */}
+        <div 
+          ref={canvasRef}
+          className={`flex-1 overflow-hidden relative 
+            ${(tool === 'hand' || isSpacePressed) ? 'cursor-grab active:cursor-grabbing' : 
+              (tool === 'pen') ? 'cursor-crosshair' : 
+              (tool === 'eraser') ? 'cursor-cell' : 'cursor-default'}`}
+          style={{ touchAction: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+        >
+           <div 
+             id="canvas-background"
+             className="absolute origin-top-left w-full h-full"
+             style={{
+               transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+               backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
+               backgroundSize: '20px 20px',
+               width: '50000px',
+               height: '50000px',
+               pointerEvents: 'auto'
+             }}
+           >
+             <div className="absolute top-20 left-20 w-[600px] select-none pointer-events-none">
+               <input 
+                 value={pageTitle}
+                 onChange={(e) => { 
+                   const newTitle = e.target.value;
+                   setPageTitle(newTitle);
+                   // Immediately update page name to keep them in sync
+                   onUpdate({ name: newTitle });
+                 }}
+                 onBlur={() => {
+                   // Ensure final sync on blur
+                   if (pageTitle !== page.name) {
+                     onUpdate({ name: pageTitle });
+                   }
+                 }}
+                 className="text-5xl font-light text-gray-800 bg-transparent border-none outline-none w-full placeholder-gray-300 pointer-events-auto"
+                 placeholder="Page Title"
+               />
+               <div className="text-sm text-gray-400 mt-2 flex gap-4">
+                  <span>{currentDate.date}</span>
+                  <span>{currentDate.time}</span>
+               </div>
+             </div>
+
+             {/* Paths */}
+             {paths.map(p => (
+                <div
+                  key={p.id}
+                  className={`absolute pointer-events-auto hover:ring-1 hover:ring-purple-200 ${selectedId === p.id && selectedType === 'path' ? 'ring-1 ring-purple-500 bg-purple-50/10' : ''}`}
+                  style={{ left: p.x, top: p.y, width: p.width, height: p.height, cursor: tool === 'cursor' ? 'move' : (tool === 'eraser' ? 'cell' : 'inherit') }}
+                  onPointerDown={(e) => {
+                     if (tool === 'cursor') {
+                        e.stopPropagation();
+                        setSelectedId(p.id);
+                        setSelectedType('path');
+                        pushToHistory();
+                        setDragInfo({ type: 'path', startX: e.clientX, startY: e.clientY, initialX: p.x, initialY: p.y, id: p.id });
+                     } else if (tool === 'eraser') {
+                        e.stopPropagation();
+                        pushToHistory();
+                        setPaths(prev => prev.filter(item => item.id !== p.id));
+                     }
+                  }}
+                  onPointerEnter={(e) => {
+                     if (tool === 'eraser' && e.buttons === 1) {
+                        pushToHistory();
+                        setPaths(prev => prev.filter(item => item.id !== p.id));
+                     }
+                  }}
+                >
+                   <svg width="100%" height="100%" viewBox={`0 0 ${p.width} ${p.height}`} className="overflow-visible block">
+                      <path d={getSvgPath(p.points, p.isArrow)} stroke={p.color} strokeWidth={p.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      {p.isArrow && <path d={getArrowHead(p.points)} stroke={p.color} strokeWidth={p.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+                   </svg>
+                </div>
+             ))}
+
+             {/* Active Draw */}
+             {drawInfo && drawInfo.isDrawing && (
+               <svg className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-visible z-50">
+                 <g>
+                    <path d={getSvgPath(drawInfo.currentPath.points, drawInfo.currentPath.isArrow)} stroke={drawInfo.currentPath.color} strokeWidth={drawInfo.currentPath.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    {drawInfo.currentPath.isArrow && <path d={getArrowHead(drawInfo.currentPath.points)} stroke={drawInfo.currentPath.color} strokeWidth={drawInfo.currentPath.strokeWidth * 2} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+                 </g>
+               </svg>
+             )}
+
+             {/* Containers */}
+             {containers.map(container => (
+               <UniversalContainer
+                 key={container.id}
+                 container={container}
+                 scale={transform.scale}
+                 isSelected={selectedId === container.id}
+                 onSelect={() => { setSelectedId(container.id); setSelectedType('container'); }}
+                 onUpdate={(fields) => setContainers(prev => prev.map(c => c.id === container.id ? { ...c, ...fields } : c))}
+                 onDragStart={(e) => {
+                   e.stopPropagation();
+                   pushToHistory();
+                   setSelectedId(container.id);
+                   setSelectedType('container');
+                   setDragInfo({ type: 'container', startX: e.clientX, startY: e.clientY, initialX: container.x, initialY: container.y, id: container.id });
+                 }}
+                 onResizeStart={(e) => {
+                   e.stopPropagation();
+                   e.preventDefault();
+                   pushToHistory();
+                   setSelectedId(container.id);
+                   setSelectedType('container');
+                   const el = document.getElementById(`container-${container.id}`);
+                   setResizeInfo({ isResizing: true, startX: e.clientX, initialWidth: container.width || (el ? el.offsetWidth : 200), id: container.id });
+                 }}
+                 onDelete={() => { pushToHistory(); setContainers(prev => prev.filter(c => c.id !== container.id)); }}
+                 onSlash={(x, y) => setSlashMenu({ x, y, containerId: container.id })}
+               />
+             ))}
+           </div>
+        </div>
+        {slashMenu && <SlashMenu x={slashMenu.x} y={slashMenu.y} onSelect={handleSlashCommand} onClose={() => setSlashMenu(null)} />}
+      </div>
+    );
+  };
 
   const DEFAULT_SETTINGS = {
     theme: 'light', // 'light', 'dark', 'system'
@@ -1852,6 +2841,21 @@
       };
     };
 
+    const createCanvasPage = (name = 'Untitled Canvas') => {
+      return {
+        id: generateId(),
+        name,
+        createdAt: Date.now(),
+        type: 'canvas',
+        icon: '🎨',
+        canvasData: {
+          containers: [],
+          paths: [],
+          pageTitle: name
+        }
+      };
+    };
+
     const addNotebook = async () => {
       saveToHistory();
       const newPage = createDefaultPage();
@@ -2012,6 +3016,66 @@
               }));
           } catch (error) {
               console.error('Error syncing page to Drive:', error);
+          }
+      }
+    };
+
+    const addCanvasPage = async () => {
+      if (!activeTabId) return;
+      saveToHistory();
+      const newPage = createCanvasPage();
+      const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+      const activeTab = activeNotebook?.tabs.find(t => t.id === activeTabId);
+      
+      const newData = {
+        ...data,
+        notebooks: data.notebooks.map(nb => 
+          nb.id !== activeNotebookId ? nb : {
+              ...nb,
+              tabs: nb.tabs.map(tab => 
+                  tab.id !== activeTabId ? tab : {
+                      ...tab,
+                      pages: [...tab.pages, newPage],
+                      activePageId: newPage.id
+                  }
+              )
+          }
+        )
+      };
+      setData(newData);
+      setActivePageId(newPage.id);
+      setEditingPageId(null);
+      setEditingTabId(null);
+      setEditingNotebookId(null);
+      setShouldFocusTitle(false);
+      showNotification('Canvas page created', 'success');
+      // Trigger structure sync
+      setStructureVersion(v => v + 1);
+      
+      // Sync to Drive if authenticated
+      if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
+          try {
+              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+              
+              // Update local data with Drive ID
+              setData(prev => ({
+                  ...prev,
+                  notebooks: prev.notebooks.map(nb => 
+                      nb.id !== activeNotebookId ? {
+                          ...nb,
+                          tabs: nb.tabs.map(tab => 
+                              tab.id !== activeTabId ? {
+                                  ...tab,
+                                  pages: tab.pages.map(page => 
+                                      page.id === newPage.id ? { ...page, driveFileId: pageFileId } : page
+                                  )
+                              } : tab
+                          )
+                      } : nb
+                  )
+              }));
+          } catch (error) {
+              console.error('Error syncing canvas page to Drive:', error);
           }
       }
     };
@@ -3158,7 +4222,7 @@
 
           <div className="flex-1 flex overflow-hidden">
               {/* Main content area with cached iframes */}
-              <div className={`flex-1 relative ${activePage?.embedUrl ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+              <div className={`flex-1 relative ${(activePage?.embedUrl || activePage?.type === 'canvas') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
                       .filter(p => {
@@ -3185,7 +4249,15 @@
                       ))
                   }
                   {activePage ? (
-                      activePage.embedUrl ? (
+                      activePage.type === 'canvas' ? (
+                          // Canvas page
+                          <CanvasPageComponent 
+                            page={activePage}
+                            onUpdate={(updates) => updatePageMeta(updates)}
+                            saveToHistory={saveToHistory}
+                            showNotification={showNotification}
+                          />
+                      ) : activePage.embedUrl ? (
                           // Embedded page (Google Docs/Sheets/Slides, Web, PDF)
                           <div className="w-full h-full flex flex-col">
                               <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3">
@@ -3586,6 +4658,9 @@
                                   <div className="page-type-menu absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 py-1 w-48 animate-fade-in">
                                       <button onClick={() => { addPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">📝</span> Block Page
+                                      </button>
+                                      <button onClick={() => { addCanvasPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">🎨</span> Canvas
                                       </button>
                                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                       <button onClick={() => { 
