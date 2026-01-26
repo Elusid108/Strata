@@ -23,11 +23,13 @@ Strata/
 ├── index.html          # Main HTML entry point
 ├── styles.css          # Custom CSS styles (dark mode, animations, etc.)
 ├── app.js              # React application (JSX, uses Babel for transpilation)
-├── google-api.js       # Google Drive API helper module
-├── config.js           # Google API credentials (create from config.example.js)
-├── config.example.js   # Template for config.js
-├── .gitignore          # Excludes config.js from git
-└── README.md           # This file
+├── google-api.js        # Google Drive API helper module
+├── reconciler.js        # Remote-first boot logic and structure reconciliation
+├── migration.js          # Migration script to convert old structure to UID system
+├── config.js            # Google API credentials (create from config.example.js)
+├── config.example.js    # Template for config.js
+├── .gitignore           # Excludes config.js from git
+└── README.md            # This file
 ```
 
 Note: index.html is self-contained (inline app + styles). app.js and styles.css are kept for development/edit convenience; config.js and google-api.js are still loaded externally.
@@ -56,18 +58,20 @@ Strata supports **Google Drive** as the primary storage backend, with localStora
 ### Google Drive Integration
 
 **Storage Architecture:**
-- **Manifest File** (`strata_manifest.json`): Stored in Google Drive's `appDataFolder` (hidden, app-specific)
-  - Contains all notebooks, tabs, pages, blocks, and settings
-  - Automatically synced with debounced saves
+- **Structure File** (`strata_structure.json`): Stored in root folder "Strata Notebooks"
+  - Single source of truth with flat nodes map (UID → Node Data) and trash array
+  - Each node contains: `uid`, `type` (notebook/tab/page), `name`, `parentUid`, `driveId`, and `appProperties`
+  - Files are tagged with `appProperties.strataUID` for UID-based lookup
 - **Folder Structure**: Mirrors your Notebook/Tab hierarchy in "My Drive"
   - Root folder: `Strata Notebooks`
   - Each Notebook → Drive folder
   - Each Tab → Drive folder (nested under Notebook folder)
-  - Each Page → JSON file with content
+  - Each Page → JSON file with content (named by `driveId`)
 - **Portable Backup**: Download the entire `Strata Notebooks` folder as a ZIP
   - Includes `index.html` offline viewer
   - Open locally in any browser without internet
-  - `manifest.json` contains full structure metadata
+  - `strata_structure.json` contains full structure metadata
+  - Files are named by their `driveId` for reliable lookup
 
 ### Setup Instructions
 
@@ -117,6 +121,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.2** - UID-based structure system: implemented new StrataStructure format with flat nodes map and UID-based file operations. Added migration script, reconciler for remote-first boot, and updated offline viewer to use strata_structure.json
 - **v2.6.1** - Fixed Drive data loading: notebooks/tabs now correctly load from Drive after login instead of reverting to localStorage
 - **v2.6.0** - Fixed duplicate folder creation race condition, added Drive cleanup button in settings to remove old temporary files, fixed missing API function errors
 - **v2.5.9** - Reorganized page type menu: reordered menu items with improved grouping (Block Page, Canvas, Database, Code Page, Google Suite, Drive, PDF), updated UI layout for better organization

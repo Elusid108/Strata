@@ -1,6 +1,27 @@
 // Google API Helper Module for Strata
 // Handles authentication, Drive API operations, and Picker integration
 
+/**
+ * @typedef {Object} StrataNode
+ * @property {string} uid - Unique identifier for the node
+ * @property {'notebook'|'tab'|'page'} type - Type of node (notebook, tab, or page)
+ * @property {string} name - Display name of the node
+ * @property {string|null} parentUid - UID of the parent node (null for root-level notebooks)
+ * @property {string|null} driveId - Google Drive file/folder ID (nullable)
+ * @property {Object} appProperties - Additional custom properties object
+ */
+
+/**
+ * @typedef {Object} StrataStructure
+ * @property {Object.<string, StrataNode>} nodes - Map of UID (string) to Node Data
+ * @property {string[]} trash - Array of UIDs for deleted nodes
+ * 
+ * @description
+ * Single Source of Truth for Strata file structure.
+ * Contains a flat map of all nodes (notebooks, tabs, pages) keyed by UID,
+ * and a trash array for soft-deleted nodes.
+ */
+
 let gapiLoaded = false;
 let gisLoaded = false;
 let tokenClient = null;
@@ -367,6 +388,93 @@ const getFileWithProperties = async (fileId) => {
         return response.result;
     } catch (error) {
         console.error('Error getting file with properties:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Set appProperties.strataUID on a Drive file
+const setFileUid = async (fileId, uid) => {
+    try {
+        await ensureAuthenticated();
+        
+        await gapi.client.drive.files.update({
+            fileId: fileId,
+            resource: { appProperties: { strataUID: uid } },
+            fields: 'id, appProperties'
+        });
+        
+        return true;
+    } catch (error) {
+        console.error('Error setting file UID:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Search Drive for files with matching appProperties.strataUID
+const getFileByUid = async (uid) => {
+    try {
+        await ensureAuthenticated();
+        
+        const response = await gapi.client.drive.files.list({
+            q: `appProperties has { key='strataUID' and value='${uid}' } and trashed=false`,
+            fields: 'files(id, name, mimeType, appProperties)',
+            pageSize: 1
+        });
+        
+        if (response.result.files && response.result.files.length > 0) {
+            return response.result.files[0];
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error getting file by UID:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Get all files in Drive that have appProperties.strataUID (handles pagination)
+const getAllFilesWithUid = async () => {
+    try {
+        await ensureAuthenticated();
+        
+        const allFiles = [];
+        let nextPageToken = null;
+        
+        do {
+            const requestParams = {
+                q: `appProperties has { key='strataUID' } and trashed=false`,
+                fields: 'nextPageToken, files(id, name, mimeType, parents, appProperties)',
+                pageSize: 1000
+            };
+            
+            if (nextPageToken) {
+                requestParams.pageToken = nextPageToken;
+            }
+            
+            const response = await gapi.client.drive.files.list(requestParams);
+            
+            if (response.result.files) {
+                allFiles.push(...response.result.files);
+            }
+            
+            nextPageToken = response.result.nextPageToken || null;
+        } while (nextPageToken);
+        
+        return allFiles;
+    } catch (error) {
+        console.error('Error getting all files with UID:', error);
         if (error.status === 401) {
             await handleTokenExpiration();
             throw new Error('Authentication expired');
@@ -904,6 +1012,112 @@ const saveIndexFile = async (rootFolderId, indexData) => {
             await handleTokenExpiration();
             throw new Error('Authentication expired');
         }
+        throw error;
+    }
+};
+
+// Save StrataStructure to strata_structure.json in root folder
+const saveStructure = async (structureData) => {
+    try {
+        await ensureAuthenticated();
+        
+        const rootFolderId = await getOrCreateRootFolder();
+        const content = JSON.stringify(structureData, null, 2);
+        
+        // Check if file exists
+        const searchResponse = await gapi.client.drive.files.list({
+            q: `name='strata_structure.json' and '${rootFolderId}' in parents and trashed=false`,
+            fields: 'files(id)',
+            pageSize: 1
+        });
+        
+        const contentBlob = new Blob([content], { type: 'application/json' });
+        
+        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+            // Update existing file
+            const fileId = searchResponse.result.files[0].id;
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify({ name: 'strata_structure.json' })], { type: 'application/json' }));
+            form.append('file', contentBlob);
+            
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: form
+            });
+            
+            return fileId;
+        } else {
+            // Create new file
+            const metadata = {
+                name: 'strata_structure.json',
+                parents: [rootFolderId],
+                mimeType: 'application/json'
+            };
+            
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', contentBlob);
+            
+            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: form
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to create structure file: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            return result.id;
+        }
+    } catch (error) {
+        console.error('Error saving structure:', error);
+        if (error.status === 401 || error.message.includes('Authentication')) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Load StrataStructure from strata_structure.json in root folder
+// Throws error if file not found or download fails (no fallback)
+const loadStructure = async () => {
+    try {
+        await ensureAuthenticated();
+        
+        const rootFolderId = await getOrCreateRootFolder();
+        
+        // Search for strata_structure.json in root folder
+        const searchResponse = await gapi.client.drive.files.list({
+            q: `name='strata_structure.json' and '${rootFolderId}' in parents and trashed=false`,
+            fields: 'files(id)',
+            pageSize: 1
+        });
+        
+        if (!searchResponse.result.files || searchResponse.result.files.length === 0) {
+            throw new Error('strata_structure.json not found in root folder');
+        }
+        
+        const fileId = searchResponse.result.files[0].id;
+        
+        // Download file content
+        const fileResponse = await gapi.client.drive.files.get({
+            fileId: fileId,
+            alt: 'media'
+        });
+        
+        // Parse JSON and return structure
+        return JSON.parse(fileResponse.body);
+    } catch (error) {
+        console.error('Error loading structure:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        // Re-throw all errors (including 404) - no fallback
         throw error;
     }
 };
@@ -2731,6 +2945,13 @@ window.GoogleAPI = {
     getFileMetadata,
     updateFileProperties,
     createFileWithProperties,
+    // UID-based file operations
+    setFileUid,
+    getFileByUid,
+    getAllFilesWithUid,
+    // Structure persistence functions
+    saveStructure,
+    loadStructure,
     // Idempotent save functions
     saveFileIdempotent,
     saveFolderIdempotent,

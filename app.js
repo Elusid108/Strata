@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.1";
+  const APP_VERSION = "2.6.2";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -69,47 +69,89 @@
         </div>
     </div>
     <script>
-        let manifest = null;
+        let structure = null; // { nodes: {...}, trash: [...] }
         let currentNotebook = null;
         let currentTab = null;
         let currentPage = null;
 
-        async function loadManifest() {
+        async function loadStructure() {
             try {
-                const response = await fetch('manifest.json');
-                if (!response.ok) throw new Error('Could not load manifest.json');
-                manifest = await response.json();
+                const response = await fetch('strata_structure.json');
+                if (!response.ok) throw new Error('Could not load strata_structure.json');
+                structure = await response.json();
                 renderNav();
-                if (manifest.notebooks.length > 0) {
-                    selectNotebook(manifest.notebooks[0]);
+                const notebooks = buildNavigationFromNodes(structure.nodes);
+                if (notebooks.length > 0) {
+                    selectNotebook(notebooks[0].uid);
                 } else {
                     document.getElementById('content').innerHTML = '<div class="empty">No notebooks found</div>';
                 }
             } catch (e) {
-                document.getElementById('content').innerHTML = '<div class="error">Error: ' + e.message + '<br><br>Make sure manifest.json is in the same folder as index.html</div>';
+                document.getElementById('content').innerHTML = '<div class="error">Error: ' + e.message + '<br><br>Make sure strata_structure.json is in the same folder as index.html</div>';
             }
+        }
+
+        function buildNavigationFromNodes(nodes) {
+            // Get root-level notebooks (parentUid === null)
+            const notebooks = Object.values(nodes)
+                .filter(n => n.type === 'notebook' && n.parentUid === null)
+                .sort((a, b) => a.name.localeCompare(b.name));
+            
+            // For each notebook, get its tabs
+            const navStructure = notebooks.map(nb => {
+                const tabs = Object.values(nodes)
+                    .filter(n => n.type === 'tab' && n.parentUid === nb.uid)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(tab => {
+                        // For each tab, get its pages
+                        const pages = Object.values(nodes)
+                            .filter(n => n.type === 'page' && n.parentUid === tab.uid)
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(page => ({
+                                ...page,
+                                id: page.uid,
+                                file: page.driveId ? \`\${page.driveId}.json\` : null
+                            }));
+                        
+                        return {
+                            ...tab,
+                            id: tab.uid,
+                            pages: pages
+                        };
+                    });
+                
+                return {
+                    ...nb,
+                    id: nb.uid,
+                    tabs: tabs
+                };
+            });
+            
+            return navStructure;
         }
 
         function renderNav() {
             const nav = document.getElementById('nav');
-            nav.innerHTML = manifest.notebooks.map(nb => \`
+            const navStructure = buildNavigationFromNodes(structure.nodes);
+            
+            nav.innerHTML = navStructure.map(nb => \`
                 <div class="notebook">
-                    <div class="notebook-header" onclick="selectNotebook(manifest.notebooks.find(n => n.id === '\${nb.id}'))" id="nb-\${nb.id}">
-                        <span>\${nb.icon || '📓'}</span>
+                    <div class="notebook-header" onclick="selectNotebook('\${nb.uid}')" id="nb-\${nb.uid}">
+                        <span>\${nb.appProperties?.icon || '📓'}</span>
                         <span>\${nb.name}</span>
                     </div>
-                    <div class="tabs" id="tabs-\${nb.id}" style="display: none;">
+                    <div class="tabs" id="tabs-\${nb.uid}" style="display: none;">
                         \${nb.tabs.map(tab => \`
                             <div class="tab">
-                                <div class="tab-header" onclick="selectTab(manifest.notebooks.find(n => n.id === '\${nb.id}'), '\${tab.id}')" id="tab-\${tab.id}">
-                                    <span>\${tab.icon || '📋'}</span>
+                                <div class="tab-header" onclick="selectTab('\${nb.uid}', '\${tab.uid}')" id="tab-\${tab.uid}">
+                                    <span>\${tab.appProperties?.icon || '📋'}</span>
                                     <span>\${tab.name}</span>
                                 </div>
-                                <div class="pages" id="pages-\${tab.id}" style="display: none;">
+                                <div class="pages" id="pages-\${tab.uid}" style="display: none;">
                                     \${tab.pages.map(page => \`
                                         <div class="page">
-                                            <div class="page-item" onclick="selectPage('\${nb.id}', '\${tab.id}', '\${page.id}')" id="page-\${page.id}">
-                                                <span>\${page.icon || '📄'}</span>
+                                            <div class="page-item" onclick="selectPage('\${nb.uid}', '\${tab.uid}', '\${page.uid}')" id="page-\${page.uid}">
+                                                <span>\${page.appProperties?.icon || '📄'}</span>
                                                 <span>\${page.name}</span>
                                             </div>
                                         </div>
@@ -122,23 +164,32 @@
             \`).join('');
         }
 
-        function selectNotebook(nb) {
+        function selectNotebook(nbUid) {
+            const nb = Object.values(structure.nodes).find(n => n.uid === nbUid && n.type === 'notebook');
+            if (!nb) return;
+            
             document.querySelectorAll('.notebook-header').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tabs').forEach(el => el.style.display = 'none');
-            document.getElementById('nb-' + nb.id).classList.add('active');
-            document.getElementById('tabs-' + nb.id).style.display = 'block';
+            document.getElementById('nb-' + nbUid).classList.add('active');
+            document.getElementById('tabs-' + nbUid).style.display = 'block';
             currentNotebook = nb;
-            if (nb.tabs.length > 0) selectTab(nb, nb.tabs[0].id);
+            
+            const tabs = Object.values(structure.nodes).filter(n => n.type === 'tab' && n.parentUid === nbUid);
+            if (tabs.length > 0) selectTab(nbUid, tabs[0].uid);
         }
 
-        function selectTab(nb, tabId) {
-            const tab = nb.tabs.find(t => t.id === tabId);
+        function selectTab(nbUid, tabUid) {
+            const tab = Object.values(structure.nodes).find(n => n.uid === tabUid && n.type === 'tab');
+            if (!tab) return;
+            
             document.querySelectorAll('.tab-header').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.pages').forEach(el => el.style.display = 'none');
-            document.getElementById('tab-' + tabId).classList.add('active');
-            document.getElementById('pages-' + tabId).style.display = 'block';
+            document.getElementById('tab-' + tabUid).classList.add('active');
+            document.getElementById('pages-' + tabUid).style.display = 'block';
             currentTab = tab;
-            if (tab.pages.length > 0) selectPage(nb.id, tabId, tab.pages[0].id);
+            
+            const pages = Object.values(structure.nodes).filter(n => n.type === 'page' && n.parentUid === tabUid);
+            if (pages.length > 0) selectPage(nbUid, tabUid, pages[0].uid);
         }
 
         let mermaidInitialized = false;
@@ -174,25 +225,53 @@
                 outputEl.style.color = '#dc2626';
             }
         }
-        async function selectPage(nbId, tabId, pageId) {
+        async function selectPage(nbUid, tabUid, pageUid) {
             document.querySelectorAll('.page-item').forEach(el => el.classList.remove('active'));
-            document.getElementById('page-' + pageId).classList.add('active');
+            document.getElementById('page-' + pageUid).classList.add('active');
             
-            const nb = manifest.notebooks.find(n => n.id === nbId);
-            const tab = nb.tabs.find(t => t.id === tabId);
-            const page = tab.pages.find(p => p.id === pageId);
-            currentPage = page;
+            const pageNode = structure.nodes[pageUid];
+            if (!pageNode) {
+                document.getElementById('content').innerHTML = '<div class="error">Page not found</div>';
+                return;
+            }
+            
+            currentPage = pageNode;
 
-            if (page.type === 'mermaid') {
+            // Check if page is missing
+            if (!pageNode.driveId) {
+                const icon = pageNode.appProperties?.icon || '📄';
+                if (pageNode.appProperties?.missing) {
+                    document.getElementById('content').innerHTML = \`
+                        <div class="page-content">
+                            <h1 class="page-title"><span>\${icon}</span> \${pageNode.name}</h1>
+                            <div class="error">This page is missing from Drive.</div>
+                        </div>
+                    \`;
+                } else {
+                    document.getElementById('content').innerHTML = \`
+                        <div class="page-content">
+                            <h1 class="page-title"><span>\${icon}</span> \${pageNode.name}</h1>
+                            <div class="error">Page file not found.</div>
+                        </div>
+                    \`;
+                }
+                return;
+            }
+
+            // Get page type from appProperties or default to 'block'
+            const pageType = pageNode.appProperties?.pageType || 'block';
+
+            if (pageType === 'mermaid') {
                 try {
-                    const filePath = nb.folder + '/' + tab.folder + '/' + page.file;
+                    // Files are named by their driveId in offline backup
+                    const filePath = \`\${pageNode.driveId}.json\`;
                     const response = await fetch(filePath);
                     if (!response.ok) throw new Error('Could not load page');
                     const pageData = await response.json();
                     const codeType = pageData.codeType || 'mermaid';
                     const code = (pageData.code ?? pageData.mermaidCode ?? '').trim();
-                    const icon = page.icon || '</>';
-                    let html = '<div class="page-content"><h1 class="page-title"><span>' + icon + '</span> ' + page.name + '</h1>';
+                    const icon = pageNode.appProperties?.icon || '</>';
+                    let html = '<div class="page-content"><h1 class="page-title"><span>' + icon + '</span> ' + pageNode.name + '</h1>';
                     if (!code) {
                         html += '<div class="empty">No code in this page.</div>';
                     } else if (codeType === 'mermaid') {
@@ -238,12 +317,14 @@
                 return;
             }
 
-            if (page.type && page.type !== 'block') {
+            if (pageType && pageType !== 'block') {
                 // Google Doc/Sheet/Slides or external link
-                const link = page.webViewLink || page.embedUrl || '#';
+                // Note: webViewLink/embedUrl would need to be stored in appProperties for offline viewer
+                const link = pageNode.appProperties?.webViewLink || pageNode.appProperties?.embedUrl || '#';
+                const icon = pageNode.appProperties?.icon || '📄';
                 document.getElementById('content').innerHTML = \`
                     <div class="page-content">
-                        <h1 class="page-title"><span>\${page.icon || '📄'}</span> \${page.name}</h1>
+                        <h1 class="page-title"><span>\${icon}</span> \${pageNode.name}</h1>
                         <div class="google-link">
                             <p>This is a linked Google file.</p>
                             <p><a href="\${link}" target="_blank">Open in Google Drive →</a></p>
@@ -255,11 +336,12 @@
 
             // Load block page content
             try {
-                const filePath = nb.folder + '/' + tab.folder + '/' + page.file;
+                // Files are named by their driveId in offline backup
+                const filePath = \`\${pageNode.driveId}.json\`;
                 const response = await fetch(filePath);
                 if (!response.ok) throw new Error('Could not load page');
                 const pageData = await response.json();
-                renderPage(page, pageData);
+                renderPage(pageNode, pageData);
             } catch (e) {
                 document.getElementById('content').innerHTML = '<div class="error">Could not load page: ' + e.message + '</div>';
             }
@@ -268,7 +350,8 @@
         function renderPage(pageMeta, pageData) {
             const content = pageData.content || pageData.rows || [];
             let html = '<div class="page-content">';
-            html += '<h1 class="page-title"><span>' + (pageMeta.icon || '📄') + '</span> ' + pageMeta.name + '</h1>';
+            const icon = pageMeta.appProperties?.icon || pageMeta.icon || '📄';
+            html += '<h1 class="page-title"><span>' + icon + '</span> ' + pageMeta.name + '</h1>';
             
             function renderBlocks(rows) {
                 let blocksHtml = '';
@@ -315,7 +398,7 @@
         }
 
         // Start
-        loadManifest();
+        loadStructure();
     <\/script>
 </body>
 </html>`;
@@ -448,6 +531,39 @@
   };
 
   /** Pure: resolve notebook/tab/page from data by ids. Returns { notebook, tab, page }. */
+  // Helper function to get children by parent UID
+  const getChildrenByParentUid = (nodes, parentUid) => {
+    return Object.values(nodes).filter(node => node.parentUid === parentUid);
+  };
+
+  // Helper function to build hierarchy from nodes map (for backward compatibility)
+  const buildHierarchy = (nodes) => {
+    const notebooks = [];
+    const notebookNodes = Object.values(nodes).filter(n => n.type === 'notebook' && n.parentUid === null);
+    
+    for (const notebookNode of notebookNodes) {
+      const tabs = [];
+      const tabNodes = Object.values(nodes).filter(n => n.type === 'tab' && n.parentUid === notebookNode.uid);
+      
+      for (const tabNode of tabNodes) {
+        const pages = Object.values(nodes).filter(n => n.type === 'page' && n.parentUid === tabNode.uid);
+        tabs.push({
+          ...tabNode,
+          id: tabNode.uid,
+          pages: pages.map(p => ({ ...p, id: p.uid }))
+        });
+      }
+      
+      notebooks.push({
+        ...notebookNode,
+        id: notebookNode.uid,
+        tabs: tabs
+      });
+    }
+    
+    return { notebooks };
+  };
+
   const getActiveContext = (data, notebookId, tabId, pageId) => {
       const notebook = data.notebooks?.find(n => n.id === notebookId) ?? null;
       const tab = notebook?.tabs?.find(t => t.id === tabId) ?? null;
@@ -3001,6 +3117,10 @@
   function App() {
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [showSettings, setShowSettings] = useState(false);
+    // New flat structure: nodes map and trash array
+    const [nodes, setNodes] = useState({});
+    const [trash, setTrash] = useState([]);
+    // Legacy data structure for backward compatibility during transition
     const [data, setData] = useState(INITIAL_DATA);
     const [activeNotebookId, setActiveNotebookId] = useState(null);
     const [activeTabId, setActiveTabId] = useState(null);
@@ -3149,69 +3269,45 @@
         // Wait for auth to finish loading
         if (isLoadingAuth) return;
 
-        if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-          // Load from Google Drive structure
+        if (isAuthenticated && typeof GoogleAPI !== 'undefined' && typeof Reconciler !== 'undefined') {
+          // Load from Google Drive using remote-first approach
           try {
             // Get or create root folder
             const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
             setDriveRootFolderId(rootFolderId);
             
-            // Try to load from Drive structure
-            const driveData = await GoogleAPI.loadFromDriveStructure(rootFolderId);
+            // Load app structure from strata_structure.json
+            await Reconciler.loadApp(setNodes, setTrash);
             
-            if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
-              // Load data from Drive structure
-              setData(driveData);
-              if (driveData.notebooks.length > 0) {
-                const firstNb = driveData.notebooks[0];
-                setActiveNotebookId(firstNb.id);
-                const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-                setActiveTabId(tabId);
-                if(tabId) {
-                   const tab = firstNb.tabs.find(t => t.id === tabId);
-                   if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+            // Convert nodes to hierarchical structure for backward compatibility
+            const hierarchicalData = buildHierarchy(nodes);
+            setData(hierarchicalData);
+            
+            // Set initial active items from nodes
+            const rootNodes = Object.values(nodes).filter(n => n.type === 'notebook' && n.parentUid === null);
+            if (rootNodes.length > 0) {
+              const firstNb = rootNodes[0];
+              setActiveNotebookId(firstNb.uid);
+              
+              const tabNodes = Object.values(nodes).filter(n => n.type === 'tab' && n.parentUid === firstNb.uid);
+              if (tabNodes.length > 0) {
+                const firstTab = tabNodes[0];
+                setActiveTabId(firstTab.uid);
+                
+                const pageNodes = Object.values(nodes).filter(n => n.type === 'page' && n.parentUid === firstTab.uid);
+                if (pageNodes.length > 0) {
+                  setActivePageId(pageNodes[0].uid);
                 }
-              }
-            } else {
-              // No structure found, check for localStorage migration
-              const saved = localStorage.getItem('note-app-data-v1');
-              if (saved) {
-                try {
-                  const parsed = JSON.parse(saved);
-                  // TODO: Migrate from localStorage to Drive structure
-                  // For now, just use localStorage data
-                  setData(parsed);
-                  if (parsed.notebooks.length > 0) {
-                    const firstNb = parsed.notebooks[0];
-                    setActiveNotebookId(firstNb.id);
-                    const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-                    setActiveTabId(tabId);
-                    if(tabId) {
-                       const tab = firstNb.tabs.find(t => t.id === tabId);
-                       if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
-                    }
-                  }
-                  showNotification('Loaded from local storage. Structure migration pending.', 'info');
-                } catch (e) {
-                  console.error('Migration error:', e);
-                  // Fall through to INITIAL_DATA
-                  setData(INITIAL_DATA);
-                  setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
-                  setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
-                  setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
-                }
-              } else {
-                // Create initial structure
-                setData(INITIAL_DATA);
-                setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
-                setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
-                setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
               }
             }
           } catch (error) {
             console.error('Error loading from Drive:', error);
             if (error.message.includes('Authentication')) {
               showNotification('Authentication expired. Please sign in again.', 'error');
+            } else if (error.message.includes('not found')) {
+              showNotification('Structure file not found. Please run migration first.', 'error');
+              // Fallback to localStorage
+              loadFromLocalStorage();
             } else {
               showNotification('Failed to load from Drive. Using local storage.', 'error');
               // Fallback to localStorage
@@ -3219,7 +3315,7 @@
             }
           }
         } else {
-          // Not authenticated, use localStorage
+          // Not authenticated or Reconciler not available, use localStorage
           loadFromLocalStorage();
         }
       };
@@ -3259,6 +3355,28 @@
 
       loadData();
     }, [isAuthenticated, isLoadingAuth]);
+
+    // Trigger verifyReality 5 seconds after successful load
+    useEffect(() => {
+      if (Object.keys(nodes).length > 0 && isAuthenticated && typeof Reconciler !== 'undefined') {
+        const timer = setTimeout(() => {
+          Reconciler.verifyReality(nodes, setNodes, async () => {
+            return await GoogleAPI.getOrCreateRootFolder();
+          });
+        }, 5000);
+        return () => clearTimeout(timer);
+      }
+    }, [nodes, isAuthenticated]);
+
+    // Sync hierarchical data back to nodes when data changes (for backward compatibility)
+    // This allows existing UI code to work while we transition to nodes-based structure
+    useEffect(() => {
+      if (data && data.notebooks) {
+        // Convert hierarchical structure back to nodes map if needed
+        // This is mainly for backward compatibility during transition
+        // In the future, all operations should work directly with nodes
+      }
+    }, [data]);
 
     // Debounced save to Drive or localStorage
     // Note: Individual file/folder saves are handled in structure sync and content sync useEffects
