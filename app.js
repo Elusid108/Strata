@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.3";
+  const APP_VERSION = "2.5.4";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -50,11 +50,13 @@
         .loading { text-align: center; padding: 40px; color: #666; }
         .error { text-align: center; padding: 40px; color: #dc2626; }
         .empty { text-align: center; padding: 60px; color: #9ca3af; }
+        .mermaid-container { min-height: 200px; }
         @media (max-width: 768px) {
             .sidebar { width: 100%; position: fixed; bottom: 0; height: auto; max-height: 50vh; z-index: 100; }
             .main { margin-bottom: 200px; }
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -139,6 +141,7 @@
             if (tab.pages.length > 0) selectPage(nb.id, tabId, tab.pages[0].id);
         }
 
+        let mermaidInitialized = false;
         async function selectPage(nbId, tabId, pageId) {
             document.querySelectorAll('.page-item').forEach(el => el.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
@@ -147,6 +150,44 @@
             const tab = nb.tabs.find(t => t.id === tabId);
             const page = tab.pages.find(p => p.id === pageId);
             currentPage = page;
+
+            if (page.type === 'mermaid') {
+                try {
+                    const filePath = nb.folder + '/' + tab.folder + '/' + page.file;
+                    const response = await fetch(filePath);
+                    if (!response.ok) throw new Error('Could not load page');
+                    const pageData = await response.json();
+                    const code = pageData.mermaidCode || '';
+                    let html = '<div class="page-content"><h1 class="page-title"><span>' + (page.icon || '📊') + '</span> ' + page.name + '</h1>';
+                    if (!code.trim()) {
+                        html += '<div class="empty">No Mermaid code in this page.</div>';
+                    } else {
+                        html += '<div class="mermaid-container"><pre class="mermaid"></pre></div>';
+                    }
+                    html += '</div>';
+                    document.getElementById('content').innerHTML = html;
+                    document.getElementById('content').classList.remove('loading');
+                    if (code.trim()) {
+                        const pre = document.querySelector('#content .mermaid');
+                        if (pre) {
+                            pre.textContent = code;
+                            if (typeof mermaid !== 'undefined') {
+                                if (!mermaidInitialized) {
+                                    mermaid.initialize({ startOnLoad: false });
+                                    mermaidInitialized = true;
+                                }
+                                mermaid.run({ nodes: [pre] }).catch(function() {
+                                    const cnt = document.querySelector('#content .mermaid-container');
+                                    if (cnt) cnt.innerHTML = '<div class="error">Invalid Mermaid syntax</div>';
+                                });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    document.getElementById('content').innerHTML = '<div class="error">Could not load page: ' + e.message + '</div>';
+                }
+                return;
+            }
 
             if (page.type && page.type !== 'block') {
                 // Google Doc/Sheet/Slides or external link
@@ -1961,6 +2002,318 @@
     );
   };
 
+  const MERMAID_MIN_SCALE = 0.2;
+  const MERMAID_MAX_SCALE = 5;
+  const MERMAID_ZOOM_STEP = 0.25;
+
+  const MermaidPageComponent = ({ page, onUpdate, saveToHistory, showNotification, updateLocalName, syncRenameToDrive, toggleStar, activeNotebookId, activeTabId }) => {
+    const [showMermaidEdit, setShowMermaidEdit] = useState(false);
+    const [mermaidEditValue, setMermaidEditValue] = useState('');
+    const [editingMermaidName, setEditingMermaidName] = useState(false);
+    const [mermaidError, setMermaidError] = useState(null);
+    const diagramContainerRef = useRef(null);
+    const mermaidInitRef = useRef(false);
+    const viewportRef = useRef(null);
+    const transformRef = useRef({ x: 0, y: 0, scale: 1 });
+    const persistViewportRef = useRef(null);
+    const savedViewport = page.mermaidViewport || { x: 0, y: 0, scale: 1 };
+    const [transform, setTransform] = useState(savedViewport);
+    const [dragInfo, setDragInfo] = useState(null);
+
+    useEffect(() => {
+      transformRef.current = transform;
+    }, [transform]);
+
+    useEffect(() => {
+      const v = page.mermaidViewport || { x: 0, y: 0, scale: 1 };
+      setTransform(v);
+      transformRef.current = v;
+    }, [page.id]);
+
+    const persistViewport = useCallback(() => {
+      if (persistViewportRef.current) clearTimeout(persistViewportRef.current);
+      persistViewportRef.current = setTimeout(() => {
+        onUpdate({ mermaidViewport: transform });
+        persistViewportRef.current = null;
+      }, 300);
+    }, [transform, onUpdate]);
+
+    useEffect(() => {
+      if (!page.mermaidCode || mermaidError) return;
+      persistViewport();
+      return () => { if (persistViewportRef.current) clearTimeout(persistViewportRef.current); };
+    }, [transform, page.mermaidCode, mermaidError, persistViewport]);
+
+    const hasDiagram = !!(page.mermaidCode && !mermaidError);
+
+    const openMermaidEdit = () => {
+      setMermaidEditValue(page.mermaidCode ?? '');
+      setShowMermaidEdit(true);
+    };
+
+    const handleSaveMermaid = () => {
+      saveToHistory();
+      onUpdate({ mermaidCode: mermaidEditValue });
+      setShowMermaidEdit(false);
+      showNotification('Diagram updated', 'success');
+    };
+
+    const clampScale = (s) => Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, s));
+
+    const handleMermaidZoom = (delta, towardCenter = true) => {
+      const rect = viewportRef.current ? viewportRef.current.getBoundingClientRect() : null;
+      const cx = rect ? rect.width / 2 : 0;
+      const cy = rect ? rect.height / 2 : 0;
+      const t = transformRef.current;
+      const newScale = clampScale(t.scale + delta);
+      if (!towardCenter || !rect) {
+        setTransform({ ...t, scale: newScale });
+        return;
+      }
+      const dx = (cx - t.x) / t.scale;
+      const dy = (cy - t.y) / t.scale;
+      const newX = cx - dx * newScale;
+      const newY = cy - dy * newScale;
+      setTransform({ x: newX, y: newY, scale: newScale });
+    };
+
+    const handleMermaidFit = () => {
+      setTransform({ x: 0, y: 0, scale: 1 });
+    };
+
+    const handleMermaidWheel = useCallback((e) => {
+      const t = transformRef.current;
+      const rect = viewportRef.current ? viewportRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+      const vx = e.clientX - rect.left;
+      const vy = e.clientY - rect.top;
+      if (e.altKey) {
+        e.preventDefault();
+        const zoomSensitivity = 0.002;
+        const delta = -e.deltaY * zoomSensitivity * t.scale;
+        const newScale = clampScale(t.scale + delta);
+        const dx = (vx - t.x) / t.scale;
+        const dy = (vy - t.y) / t.scale;
+        const newX = vx - dx * newScale;
+        const newY = vy - dy * newScale;
+        setTransform({ x: newX, y: newY, scale: newScale });
+      } else {
+        e.preventDefault();
+        if (e.shiftKey) {
+          setTransform(prev => ({ ...prev, x: prev.x - e.deltaY }));
+        } else {
+          setTransform(prev => ({ ...prev, y: prev.y - e.deltaY }));
+        }
+      }
+    }, []);
+
+    useEffect(() => {
+      const el = viewportRef.current;
+      if (!el) return;
+      el.addEventListener('wheel', handleMermaidWheel, { passive: false });
+      return () => el.removeEventListener('wheel', handleMermaidWheel);
+    }, [handleMermaidWheel, hasDiagram]);
+
+    const handleMermaidPointerDown = (e) => {
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      if (e.button === 1 || e.button === 0) {
+        e.preventDefault();
+        const el = e.currentTarget;
+        if (el.setPointerCapture) el.setPointerCapture(e.pointerId);
+        setDragInfo({ type: 'pan', startX: e.clientX, startY: e.clientY, initial: { ...transformRef.current } });
+      }
+    };
+
+    const handleMermaidPointerMove = (e) => {
+      if (!dragInfo || dragInfo.type !== 'pan') return;
+      const dx = e.clientX - dragInfo.startX;
+      const dy = e.clientY - dragInfo.startY;
+      setTransform({ ...dragInfo.initial, x: dragInfo.initial.x + dx, y: dragInfo.initial.y + dy });
+    };
+
+    const handleMermaidPointerUp = (e) => {
+      if (dragInfo) {
+        try {
+          const el = viewportRef.current;
+          if (el && el.releasePointerCapture && e.pointerId !== undefined) el.releasePointerCapture(e.pointerId);
+        } catch (_) {}
+        setDragInfo(null);
+      }
+    };
+
+    useEffect(() => {
+      if (!page.mermaidCode || !diagramContainerRef.current) {
+        setMermaidError(null);
+        return;
+      }
+      if (typeof window.mermaid === 'undefined') {
+        setMermaidError('Mermaid library not loaded');
+        return;
+      }
+      const el = diagramContainerRef.current;
+      el.innerHTML = '';
+      const pre = document.createElement('pre');
+      pre.className = 'mermaid';
+      pre.textContent = page.mermaidCode;
+      el.appendChild(pre);
+      if (!mermaidInitRef.current) {
+        try {
+          window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
+          mermaidInitRef.current = true;
+        } catch (e) {
+          setMermaidError('Failed to initialize Mermaid');
+          return;
+        }
+      }
+      setMermaidError(null);
+      window.mermaid.run({ nodes: [pre] }).catch(() => {
+        setMermaidError('Invalid Mermaid syntax');
+      });
+    }, [page.id, page.mermaidCode]);
+
+    return (
+      <div className="w-full h-full flex flex-col bg-white dark:bg-gray-800">
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center gap-3 flex-shrink-0 flex-wrap">
+          <span className="text-2xl">{page.icon || '📊'}</span>
+          {editingMermaidName ? (
+            <input
+              className="font-semibold text-gray-700 dark:text-gray-200 outline-none border-b-2 border-blue-400 bg-transparent w-40"
+              value={page.name}
+              onChange={(e) => updateLocalName('page', page.id, e.target.value)}
+              onBlur={() => { syncRenameToDrive('page', page.id); setEditingMermaidName(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { syncRenameToDrive('page', page.id); setEditingMermaidName(false); } }}
+              onFocus={(e) => e.target.select()}
+              autoFocus
+            />
+          ) : (
+            <span
+              className="font-semibold text-gray-700 dark:text-gray-200 cursor-pointer hover:text-blue-600 transition-colors w-40 truncate"
+              onClick={() => setEditingMermaidName(true)}
+              title={page.name}
+            >
+              {page.name}
+            </span>
+          )}
+          <button
+            onClick={() => toggleStar(page.id, activeNotebookId, activeTabId)}
+            className={`p-1.5 rounded transition-colors ${page.starred ? 'text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20' : 'text-gray-300 dark:text-gray-500 hover:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+            title={page.starred ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Star size={16} filled={page.starred} />
+          </button>
+          {hasDiagram && (
+            <div className="flex items-center gap-1 ml-2 border-l border-gray-200 dark:border-gray-600 pl-2" title="Zoom and pan supported. Moving individual nodes is not supported; use the Mermaid source or spacing options to reduce overlap.">
+              <button
+                onClick={() => handleMermaidZoom(-MERMAID_ZOOM_STEP)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                disabled={transform.scale <= MERMAID_MIN_SCALE}
+                title="Zoom out"
+              >
+                <ZoomOut size={14} />
+              </button>
+              <span className="text-xs text-gray-600 dark:text-gray-400 w-10 text-center font-medium tabular-nums">
+                {Math.round(transform.scale * 100)}%
+              </span>
+              <button
+                onClick={() => handleMermaidZoom(MERMAID_ZOOM_STEP)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                disabled={transform.scale >= MERMAID_MAX_SCALE}
+                title="Zoom in"
+              >
+                <ZoomIn size={14} />
+              </button>
+              <button
+                onClick={handleMermaidFit}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 ml-1"
+                title="Reset view (Fit)"
+              >
+                <Maximize2 size={14} />
+              </button>
+            </div>
+          )}
+          <button
+            onClick={openMermaidEdit}
+            className="p-1.5 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 ml-auto"
+            title="Edit Mermaid diagram"
+          >
+            <Edit3 size={16} />
+          </button>
+        </div>
+        {page.mermaidCode ? (
+          mermaidError ? (
+            <div className="flex-1 min-h-0 overflow-auto p-6">
+              <div className="text-sm text-red-600 dark:text-red-400">{mermaidError}</div>
+            </div>
+          ) : (
+            <div
+              ref={viewportRef}
+              className="flex-1 min-h-0 overflow-hidden relative select-none"
+              style={{ touchAction: 'none', cursor: dragInfo ? 'grabbing' : 'grab' }}
+              onPointerDown={handleMermaidPointerDown}
+              onPointerMove={handleMermaidPointerMove}
+              onPointerUp={handleMermaidPointerUp}
+              onPointerLeave={handleMermaidPointerUp}
+              onPointerCancel={handleMermaidPointerUp}
+            >
+              <div
+                className="absolute top-0 left-0 w-fit h-fit"
+                style={{
+                  transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                  transformOrigin: '0 0'
+                }}
+              >
+                <div ref={diagramContainerRef} className="mermaid-container flex justify-center items-start" />
+              </div>
+            </div>
+          )
+        ) : (
+          <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 p-6">
+            <p className="text-sm mb-4">No diagram yet. Click the pencil to add Mermaid code.</p>
+            <button
+              onClick={openMermaidEdit}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Add Mermaid code
+            </button>
+          </div>
+        )}
+        {showMermaidEdit && (
+          <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full p-6 animate-fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
+                  <Edit3 size={20} /> Edit Mermaid diagram
+                </h3>
+                <button onClick={() => setShowMermaidEdit(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                  <X size={20} className="dark:text-white" />
+                </button>
+              </div>
+              <textarea
+                className="w-full h-64 p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono text-sm resize-y"
+                placeholder="Paste or type Mermaid code... e.g. graph TD; A --> B;"
+                value={mermaidEditValue}
+                onChange={(e) => setMermaidEditValue(e.target.value)}
+              />
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  onClick={() => setShowMermaidEdit(false)}
+                  className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveMermaid}
+                  className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const DEFAULT_SETTINGS = {
     theme: 'light', // 'light', 'dark', 'system'
     maxColumns: 3,
@@ -3100,6 +3453,17 @@
       };
     };
 
+    const createMermaidPage = (name = 'Mermaid Diagram') => {
+      return {
+        id: generateId(),
+        name,
+        createdAt: Date.now(),
+        type: 'mermaid',
+        icon: '📊',
+        mermaidCode: ''
+      };
+    };
+
     const addNotebook = async () => {
       saveToHistory();
       const newPage = createDefaultPage();
@@ -3321,6 +3685,60 @@
           } catch (error) {
               console.error('Error syncing canvas page to Drive:', error);
           }
+      }
+    };
+
+    const addMermaidPage = async () => {
+      if (!activeTabId) return;
+      saveToHistory();
+      const newPage = createMermaidPage();
+      const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+      const activeTab = activeNotebook?.tabs.find(t => t.id === activeTabId);
+      const newData = {
+        ...data,
+        notebooks: data.notebooks.map(nb =>
+          nb.id !== activeNotebookId ? nb : {
+            ...nb,
+            tabs: nb.tabs.map(tab =>
+              tab.id !== activeTabId ? tab : {
+                ...tab,
+                pages: [...tab.pages, newPage],
+                activePageId: newPage.id
+              }
+            )
+          }
+        )
+      };
+      setData(newData);
+      setActivePageId(newPage.id);
+      setEditingPageId(null);
+      setEditingTabId(null);
+      setEditingNotebookId(null);
+      setShouldFocusTitle(false);
+      showNotification('Mermaid page created', 'success');
+      setStructureVersion(v => v + 1);
+      if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
+        try {
+          const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+          setData(prev => ({
+            ...prev,
+            notebooks: prev.notebooks.map(nb =>
+              nb.id !== activeNotebookId ? {
+                ...nb,
+                tabs: nb.tabs.map(tab =>
+                  tab.id !== activeTabId ? {
+                    ...tab,
+                    pages: tab.pages.map(page =>
+                      page.id === newPage.id ? { ...page, driveFileId: pageFileId } : page
+                    )
+                  } : tab
+                )
+              } : nb
+            )
+          }));
+        } catch (error) {
+          console.error('Error syncing mermaid page to Drive:', error);
+        }
       }
     };
 
@@ -4397,7 +4815,7 @@
 
           <div className="flex-1 min-h-0 flex overflow-hidden">
               {/* Main content area with cached iframes */}
-              <div className={`flex-1 min-h-0 relative ${(activePage?.embedUrl || activePage?.type === 'canvas') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+              <div className={`flex-1 min-h-0 relative ${(activePage?.embedUrl || activePage?.type === 'canvas' || activePage?.type === 'mermaid') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
                       .filter(p => {
@@ -4431,6 +4849,18 @@
                             onUpdate={(updates) => updatePageMeta(updates)}
                             saveToHistory={saveToHistory}
                             showNotification={showNotification}
+                          />
+                      ) : activePage.type === 'mermaid' ? (
+                          <MermaidPageComponent
+                            page={activePage}
+                            onUpdate={(updates) => updatePageMeta(updates)}
+                            saveToHistory={saveToHistory}
+                            showNotification={showNotification}
+                            updateLocalName={updateLocalName}
+                            syncRenameToDrive={syncRenameToDrive}
+                            toggleStar={toggleStar}
+                            activeNotebookId={activeNotebookId}
+                            activeTabId={activeTabId}
                           />
                       ) : activePage.embedUrl ? (
                           // Embedded page (Google Docs/Sheets/Slides, Web, PDF)
@@ -4820,6 +5250,9 @@
                                       </button>
                                       <button onClick={() => { addCanvasPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">🎨</span> Canvas
+                                      </button>
+                                      <button onClick={() => { addMermaidPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">📊</span> Mermaid
                                       </button>
                                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                       <button onClick={() => { 

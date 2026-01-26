@@ -646,6 +646,10 @@ const syncPageToDrive = async (page, tabFolderId) => {
             createdAt: page.createdAt,
             modifiedAt: Date.now()
         };
+        if (page.type === 'mermaid') {
+            pageContent.mermaidCode = page.mermaidCode ?? '';
+            if (page.mermaidViewport) pageContent.mermaidViewport = page.mermaidViewport;
+        }
         
         // If page already has a Drive file ID, update it
         if (page.driveFileId) {
