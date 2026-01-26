@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.5";
+  const APP_VERSION = "2.5.6";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -142,6 +142,38 @@
         }
 
         let mermaidInitialized = false;
+        const PYODIDE_VIEWER_URL = 'https://cdn.jsdelivr.net/pyodide/v0.29.2/full/pyodide.js';
+        async function runPythonInViewer(code, outputEl) {
+            const out = [];
+            const append = function(msg) { out.push(msg); };
+            try {
+                if (typeof window.loadPyodide !== 'function') {
+                    const s = document.createElement('script');
+                    s.src = PYODIDE_VIEWER_URL;
+                    await new Promise(function(resolve, reject) {
+                        s.onload = resolve;
+                        s.onerror = function() { reject(new Error('Python requires network (Pyodide).')); };
+                        document.head.appendChild(s);
+                    });
+                }
+                if (!window.__pyodide) {
+                    outputEl.textContent = 'Loading Pyodide...';
+                    window.__pyodide = await loadPyodide();
+                }
+                outputEl.textContent = 'Running...';
+                const pyodide = window.__pyodide;
+                pyodide.setStdout({ batched: append });
+                pyodide.setStderr({ batched: append });
+                await pyodide.loadPackagesFromImports(code);
+                const result = pyodide.runPython(code);
+                if (result !== undefined) { try { out.push(String(result)); } catch (_) {} }
+                outputEl.textContent = out.join('') || '\\u00a0';
+                outputEl.style.color = '';
+            } catch (e) {
+                outputEl.textContent = (e && e.message) ? e.message : String(e);
+                outputEl.style.color = '#dc2626';
+            }
+        }
         async function selectPage(nbId, tabId, pageId) {
             document.querySelectorAll('.page-item').forEach(el => el.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
@@ -171,6 +203,8 @@
                         const esc = code.replace(/<\\/script>/gi, '<\\\\/script>');
                         const wrapped = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>' + esc + '</scr' + 'ipt></body></html>';
                         html += '<iframe title="Code output" sandbox="allow-scripts" srcdoc="' + wrapped.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '" style="width:100%;min-height:400px;border:1px solid #e5e7eb;border-radius:8px;"></iframe>';
+                    } else if (codeType === 'python') {
+                        html += '<div id="pyodide-output" class="pyodide-output" style="white-space:pre-wrap;font-family:monospace;font-size:14px;padding:16px;border:1px solid #e5e7eb;border-radius:8px;min-height:200px;">Loading Pyodide...</div>';
                     } else {
                         html += '<div class="empty">Unsupported code type.</div>';
                     }
@@ -192,6 +226,9 @@
                                 });
                             }
                         }
+                    } else if (code && codeType === 'python') {
+                        const el = document.getElementById('pyodide-output');
+                        if (el) runPythonInViewer(code, el);
                     }
                 } catch (e) {
                     document.getElementById('content').innerHTML = '<div class="error">Could not load page: ' + e.message + '</div>';
@@ -2016,6 +2053,51 @@
   const MERMAID_MAX_SCALE = 5;
   const MERMAID_ZOOM_STEP = 0.25;
 
+  const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.29.2/full/pyodide.js';
+  let pyodidePromise = null;
+
+  async function loadPyodideScript() {
+    if (typeof window.loadPyodide === 'function') return;
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = PYODIDE_URL;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load Pyodide'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensurePyodide() {
+    if (window.__pyodide) return window.__pyodide;
+    if (pyodidePromise) return pyodidePromise;
+    pyodidePromise = (async () => {
+      await loadPyodideScript();
+      const pyodide = await window.loadPyodide();
+      window.__pyodide = pyodide;
+      return pyodide;
+    })();
+    return pyodidePromise;
+  }
+
+  async function runPythonCode(code, pyodide) {
+    const out = [];
+    const append = (msg) => { out.push(msg); };
+    const p = pyodide || await ensurePyodide();
+    try {
+      p.setStdout({ batched: append });
+      p.setStderr({ batched: append });
+      await p.loadPackagesFromImports(code);
+      const result = p.runPython(code);
+      if (result !== undefined) {
+        try { out.push(String(result)); } catch (_) {}
+      }
+      return { output: out.join(''), error: null };
+    } catch (e) {
+      const errMsg = (e && e.message) ? e.message : String(e);
+      return { output: out.join(''), error: errMsg };
+    }
+  }
+
   const getCode = (p) => (p.code ?? p.mermaidCode ?? '').trim();
   const getCodeType = (p) => p.codeType || 'mermaid';
 
@@ -2028,6 +2110,10 @@
     const [editingName, setEditingName] = useState(false);
     const [mermaidError, setMermaidError] = useState(null);
     const [iframeError, setIframeError] = useState(null);
+    const [pythonOutput, setPythonOutput] = useState('');
+    const [pythonError, setPythonError] = useState(null);
+    const [pythonLoading, setPythonLoading] = useState(false);
+    const [pythonRunning, setPythonRunning] = useState(false);
     const diagramContainerRef = useRef(null);
     const mermaidInitRef = useRef(false);
     const viewportRef = useRef(null);
@@ -2069,6 +2155,7 @@
       setCodeEditType(getCodeType(page));
       setShowCodeEdit(true);
       setIframeError(null);
+      setPythonError(null);
     };
 
     const handleSaveCode = () => {
@@ -2192,15 +2279,48 @@
       });
     }, [page.id, codeType, code]);
 
-    const codePlaceholder = codeEditType === 'mermaid' ? 'Paste or type Mermaid code... e.g. graph TD; A --> B;' : codeEditType === 'javascript' ? 'Paste or type JavaScript... e.g. document.body.innerHTML = \'<p>Hello</p>\';' : 'Paste or type HTML... e.g. <h1>Hi</h1> or full mini-app.';
+    useEffect(() => {
+      if (codeType !== 'python' || !code) {
+        setPythonOutput('');
+        setPythonError(null);
+        setPythonLoading(false);
+        setPythonRunning(false);
+        return;
+      }
+      let cancelled = false;
+      (async () => {
+        setPythonError(null);
+        setPythonLoading(true);
+        setPythonRunning(false);
+        setPythonOutput('');
+        try {
+          if (cancelled) return;
+          const pyodide = await ensurePyodide();
+          if (cancelled) return;
+          setPythonLoading(false);
+          setPythonRunning(true);
+          const { output, error } = await runPythonCode(code, pyodide);
+          if (cancelled) return;
+          setPythonOutput(output);
+          setPythonError(error);
+        } catch (e) {
+          if (!cancelled) setPythonError((e && e.message) ? e.message : String(e));
+        } finally {
+          if (!cancelled) {
+            setPythonLoading(false);
+            setPythonRunning(false);
+          }
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [page.id, codeType, code]);
+
+    const codePlaceholder = codeEditType === 'mermaid' ? 'Paste or type Mermaid code... e.g. graph TD; A --> B;' : codeEditType === 'javascript' ? 'Paste or type JavaScript... e.g. document.body.innerHTML = \'<p>Hello</p>\';' : codeEditType === 'python' ? 'Paste or type Python... e.g. print(\'Hello\'); 1 + 2' : 'Paste or type HTML... e.g. <h1>Hi</h1> or full mini-app.';
 
     return (
       <div className="w-full h-full flex flex-col bg-white dark:bg-gray-800">
         <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center gap-3 flex-shrink-0 flex-wrap">
           <span className="text-2xl">{page.icon || '</>'}</span>
-          <span className="text-xs text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5">
-            {codeType === 'mermaid' ? 'Mermaid' : codeType === 'javascript' ? 'JavaScript' : 'HTML'}
-          </span>
           {editingName ? (
             <input
               className="font-semibold text-gray-700 dark:text-gray-200 outline-none border-b-2 border-blue-400 bg-transparent w-40"
@@ -2264,6 +2384,9 @@
               </button>
             </div>
           )}
+          <span className="ml-auto text-xs text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5">
+            {codeType === 'mermaid' ? 'Mermaid' : codeType === 'javascript' ? 'JavaScript' : codeType === 'python' ? 'Python' : 'HTML'}
+          </span>
         </div>
         {!code ? (
           <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 p-6">
@@ -2318,6 +2441,24 @@
               />
             </div>
           )
+        ) : codeType === 'python' ? (
+          pythonError ? (
+            <div className="flex-1 min-h-0 overflow-auto p-6">
+              <div className="text-sm text-red-600 dark:text-red-400 whitespace-pre-wrap font-mono">{pythonError}</div>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
+              {pythonLoading ? (
+                <div className="flex-1 min-h-0 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                  {pythonRunning ? 'Running...' : 'Loading Pyodide...'}
+                </div>
+              ) : (
+                <pre className="flex-1 min-h-0 w-full overflow-auto p-4 text-sm font-mono whitespace-pre-wrap border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+                  {pythonOutput || '\u00a0'}
+                </pre>
+              )}
+            </div>
+          )
         ) : null}
         {showCodeEdit && (
           <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -2331,13 +2472,13 @@
                 </button>
               </div>
               <div className="flex gap-2 mb-3">
-                {['mermaid', 'javascript', 'html'].map((t) => (
+                {['mermaid', 'javascript', 'html', 'python'].map((t) => (
                   <button
                     key={t}
                     onClick={() => setCodeEditType(t)}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${codeEditType === t ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
                   >
-                    {t === 'mermaid' ? 'Mermaid' : t === 'javascript' ? 'JavaScript' : 'HTML'}
+                    {t === 'mermaid' ? 'Mermaid' : t === 'javascript' ? 'JavaScript' : t === 'python' ? 'Python' : 'HTML'}
                   </button>
                 ))}
               </div>
