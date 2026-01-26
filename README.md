@@ -117,6 +117,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.5.8** - Database page type: new table/database page type with customizable columns (text, number, boolean, select), add/remove rows and columns, vertical add-column bar on right edge (mouseover), row delete buttons on left side, full table editing interface
 - **v2.5.7** - Canvas grid alignment fix: grid background now locks to canvas coordinate system during zoom-to-mouse operations, ensuring grid dots remain aligned with content at all zoom levels.
 - **v2.5.6** - Code Page: Python (Pyodide) support; lazy-load Pyodide, run Python, capture stdout/stderr; Python branch in offline viewer.
 - **v2.5.5** - Code Page: code-type label (Mermaid / HTML / JavaScript) in header; HTML/JS rendered iframes fill the page body.

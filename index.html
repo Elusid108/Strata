@@ -102,7 +102,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.7";
+  const APP_VERSION = "2.5.8";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -2226,6 +2226,348 @@ html.dark .canvas-grid {
     }
   }
 
+  // --- TablePage Component (Database/Table Pages) ---
+  const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    // Fallback for older browsers or insecure contexts
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+  const DEFAULT_SCHEMA = {
+    columns: [
+      { id: 'c1', name: 'Item Name', type: 'text', width: 200 },
+      { id: 'c2', name: 'Status', type: 'select', width: 150, options: ['Idea', 'In Progress', 'Done'] },
+      { id: 'c3', name: 'Qty', type: 'number', width: 100 },
+      { id: 'c4', name: 'Ordered?', type: 'boolean', width: 80 }
+    ]
+  };
+
+  const DEFAULT_ROWS = [
+    { id: 'r1', c1: 'Example Item', c2: 'Idea', c3: 1, c4: false }
+  ];
+
+  const TablePage = memo(({ page, onUpdate }) => {
+    // --- Initialization & Default Data ---
+    const [data, setData] = useState(() => {
+      const content = page?.content || {};
+      return {
+        schema: content.schema || DEFAULT_SCHEMA,
+        rows: content.rows || DEFAULT_ROWS
+      };
+    });
+
+    // State for the custom "Add Column" modal
+    const [isAddingColumn, setIsAddingColumn] = useState(false);
+    const [newColName, setNewColName] = useState('');
+    const [newColType, setNewColType] = useState('text');
+    const [newColOptions, setNewColOptions] = useState('');
+
+    // Track the current page ID to detect navigation changes
+    const lastPageIdRef = useRef(page?.id);
+
+    // Sync state when the page prop changes
+    useEffect(() => {
+      if (page?.id && page.id !== lastPageIdRef.current) {
+        lastPageIdRef.current = page.id;
+        const content = page.content || {};
+        setData({
+          schema: content.schema || DEFAULT_SCHEMA,
+          rows: content.rows || DEFAULT_ROWS
+        });
+      }
+    }, [page]);
+
+    // Debounced save to parent
+    const saveData = useCallback((newData) => {
+      setData(newData);
+      if (onUpdate && page) {
+        onUpdate({ ...page, content: newData });
+      }
+    }, [page, onUpdate]);
+
+    // --- Handlers ---
+
+    const handleCellChange = (rowId, colId, value) => {
+      const newRows = data.rows.map(row => 
+        row.id === rowId ? { ...row, [colId]: value } : row
+      );
+      saveData({ ...data, rows: newRows });
+    };
+
+    const addRow = () => {
+      const newRow = { id: generateUUID() };
+      const columns = data.schema?.columns || [];
+      columns.forEach(col => {
+        newRow[col.id] = col.type === 'boolean' ? false : '';
+      });
+      saveData({ ...data, rows: [...data.rows, newRow] });
+    };
+
+    const deleteRow = (rowId) => {
+      saveData({ ...data, rows: data.rows.filter(r => r.id !== rowId) });
+    };
+
+    const submitAddColumn = (e) => {
+      e.preventDefault();
+      if (!newColName.trim()) return;
+
+      let options = undefined;
+      if (newColType === 'select') {
+        options = newColOptions ? newColOptions.split(',').map(s => s.trim()).filter(s => s) : ['Option 1'];
+        if (options.length === 0) options = ['Option 1'];
+      }
+
+      const newCol = { 
+        id: generateUUID(), 
+        name: newColName, 
+        type: newColType, 
+        width: 150, 
+        options 
+      };
+
+      const currentSchema = data.schema || { columns: [] };
+      const currentColumns = currentSchema.columns || [];
+
+      saveData({
+        ...data,
+        schema: { 
+          ...currentSchema, 
+          columns: [...currentColumns, newCol] 
+        }
+      });
+
+      // Reset and close modal
+      setNewColName('');
+      setNewColType('text');
+      setNewColOptions('');
+      setIsAddingColumn(false);
+    };
+
+    // --- Render Helpers ---
+
+    return (
+      <div className="flex flex-col h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden relative">
+        
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 p-2 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider px-2">Table Database</h2>
+          <div className="flex-1"></div>
+        </div>
+
+        {/* Table Container */}
+        <div className="flex-1 overflow-auto p-4 group">
+          <div className="relative">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  {/* Row Handle Column */}
+                  <th className="w-12 border-b-2 border-gray-300 dark:border-gray-700"></th>
+                  
+                  {/* Data Columns */}
+                  {(data.schema?.columns || []).map(col => (
+                    <th key={col.id} className="text-left font-medium text-gray-500 p-2 border-b-2 border-gray-300 dark:border-gray-700 min-w-[100px]" style={{ width: col.width }}>
+                      <div className="flex items-center gap-1">
+                        {getColumnIcon(col.type)}
+                        <span>{col.name}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((row, index) => (
+                  <tr key={row.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                    {/* Number / Handle with Delete Button */}
+                    <td className="text-center text-gray-400 text-xs border-b border-gray-200 dark:border-gray-800">
+                      <div className="flex items-center justify-center gap-1">
+                        <span>{index + 1}</span>
+                        <button 
+                          onClick={() => deleteRow(row.id)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 p-1 transition-opacity"
+                          title="Delete row"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    </td>
+
+                    {/* Cells */}
+                    {(data.schema?.columns || []).map(col => (
+                      <td key={col.id} className="border-b border-gray-200 dark:border-gray-800 p-0 relative">
+                        <CellEditor 
+                          type={col.type} 
+                          value={row[col.id]} 
+                          options={col.options}
+                          onChange={(val) => handleCellChange(row.id, col.id, val)} 
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                
+                {/* "Add Row" Bottom Row */}
+                <tr>
+                  <td colSpan={(data.schema?.columns?.length || 0) + 1} className="p-2 border-b border-transparent">
+                    <button onClick={addRow} className="flex items-center gap-2 text-gray-400 hover:text-blue-500 text-sm py-2">
+                      <span>+ New Row</span>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            
+            {/* Vertical Add Column Bar */}
+            <button
+              onClick={() => setIsAddingColumn(true)}
+              className="absolute right-0 top-0 bottom-0 w-2 bg-gray-300 dark:bg-gray-600 hover:bg-blue-500 dark:hover:bg-blue-600 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer z-10"
+              title="Add column"
+              style={{ width: '8px' }}
+            >
+              <span className="sr-only">Add column</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Custom Add Column Modal */}
+        {isAddingColumn && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <form onSubmit={submitAddColumn} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-80 space-y-4 border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium">Add New Column</h3>
+              
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-500 uppercase">Name</label>
+                <input 
+                  autoFocus
+                  type="text" 
+                  value={newColName} 
+                  onChange={e => setNewColName(e.target.value)}
+                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                  placeholder="e.g. Price, Category"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-500 uppercase">Type</label>
+                <select 
+                  value={newColType} 
+                  onChange={e => setNewColType(e.target.value)}
+                  className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                >
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="boolean">Checkbox</option>
+                  <option value="select">Select (Dropdown)</option>
+                </select>
+              </div>
+
+              {newColType === 'select' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-500 uppercase">Options</label>
+                  <input 
+                    type="text" 
+                    value={newColOptions} 
+                    onChange={e => setNewColOptions(e.target.value)}
+                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                    placeholder="Option 1, Option 2..."
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsAddingColumn(false)}
+                  className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-3 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded"
+                >
+                  Create Column
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+    );
+  });
+
+  // --- Sub-Components & Helpers for TablePage ---
+
+  function getColumnIcon(type) {
+    switch (type) {
+      case 'number': return <span className="opacity-50 text-xs">#</span>;
+      case 'boolean': return <span className="opacity-50 text-xs">☑</span>;
+      case 'select': return <span className="opacity-50 text-xs">▼</span>;
+      default: return <span className="opacity-50 text-xs">Aa</span>;
+    }
+  }
+
+  // The "Smart Cell" that switches input types based on schema
+  const CellEditor = ({ type, value, options, onChange }) => {
+    const baseClass = "w-full h-full p-2 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-blue-50 dark:focus:bg-blue-900/20 transition-colors";
+
+    if (type === 'boolean') {
+      return (
+        <div className="flex items-center justify-center h-full w-full">
+          <input 
+            type="checkbox" 
+            checked={!!value} 
+            onChange={(e) => onChange(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          />
+        </div>
+      );
+    }
+
+    if (type === 'select') {
+      return (
+        <select 
+          value={value || ''} 
+          onChange={(e) => onChange(e.target.value)}
+          className={`${baseClass} appearance-none cursor-pointer`}
+        >
+          <option value="" disabled className="text-gray-400">Select...</option>
+          {options?.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      );
+    }
+
+    if (type === 'number') {
+      return (
+        <input 
+          type="number" 
+          value={value || ''} 
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          className={`${baseClass} font-mono text-right`}
+          placeholder="0"
+        />
+      );
+    }
+
+    // Default Text
+    return (
+      <input 
+        type="text" 
+        value={value || ''} 
+        onChange={(e) => onChange(e.target.value)}
+        className={baseClass}
+        placeholder="Empty"
+      />
+    );
+  };
+
   const MermaidPageComponent = ({ page, onUpdate, saveToHistory, showNotification, updateLocalName, syncRenameToDrive, toggleStar, activeNotebookId, activeTabId }) => {
     const codeType = getCodeType(page);
     const code = getCode(page);
@@ -3900,6 +4242,29 @@ html.dark .canvas-grid {
       };
     };
 
+    const createDatabasePage = (name = 'Database') => {
+      return {
+        id: generateId(),
+        name,
+        createdAt: Date.now(),
+        type: 'database',
+        icon: '🗄️',
+        content: {
+          schema: {
+            columns: [
+              { id: 'c1', name: 'Item Name', type: 'text', width: 200 },
+              { id: 'c2', name: 'Status', type: 'select', width: 150, options: ['Idea', 'In Progress', 'Done'] },
+              { id: 'c3', name: 'Qty', type: 'number', width: 100 },
+              { id: 'c4', name: 'Ordered?', type: 'boolean', width: 80 }
+            ]
+          },
+          rows: [
+            { id: 'r1', c1: 'Example Item', c2: 'Idea', c3: 1, c4: false }
+          ]
+        }
+      };
+    };
+
     const addNotebook = async () => {
       saveToHistory();
       const newPage = createDefaultPage();
@@ -4174,6 +4539,60 @@ html.dark .canvas-grid {
           }));
         } catch (error) {
           console.error('Error syncing code page to Drive:', error);
+        }
+      }
+    };
+
+    const addDatabasePage = async () => {
+      if (!activeTabId) return;
+      saveToHistory();
+      const newPage = createDatabasePage();
+      const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
+      const activeTab = activeNotebook?.tabs.find(t => t.id === activeTabId);
+      const newData = {
+        ...data,
+        notebooks: data.notebooks.map(nb =>
+          nb.id !== activeNotebookId ? nb : {
+            ...nb,
+            tabs: nb.tabs.map(tab =>
+              tab.id !== activeTabId ? tab : {
+                ...tab,
+                pages: [...tab.pages, newPage],
+                activePageId: newPage.id
+              }
+            )
+          }
+        )
+      };
+      setData(newData);
+      setActivePageId(newPage.id);
+      setEditingPageId(null);
+      setEditingTabId(null);
+      setEditingNotebookId(null);
+      setShouldFocusTitle(false);
+      showNotification('Database page created', 'success');
+      setStructureVersion(v => v + 1);
+      if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
+        try {
+          const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+          setData(prev => ({
+            ...prev,
+            notebooks: prev.notebooks.map(nb =>
+              nb.id !== activeNotebookId ? {
+                ...nb,
+                tabs: nb.tabs.map(tab =>
+                  tab.id !== activeTabId ? {
+                    ...tab,
+                    pages: tab.pages.map(page =>
+                      page.id === newPage.id ? { ...page, driveFileId: pageFileId } : page
+                    )
+                  } : tab
+                )
+              } : nb
+            )
+          }));
+        } catch (error) {
+          console.error('Error syncing database page to Drive:', error);
         }
       }
     };
@@ -5251,7 +5670,7 @@ html.dark .canvas-grid {
 
           <div className="flex-1 min-h-0 flex overflow-hidden">
               {/* Main content area with cached iframes */}
-              <div className={`flex-1 min-h-0 relative ${(activePage?.embedUrl || activePage?.type === 'canvas' || activePage?.type === 'mermaid') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+              <div className={`flex-1 min-h-0 relative ${(activePage?.embedUrl || activePage?.type === 'canvas' || activePage?.type === 'mermaid' || activePage?.type === 'database') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
                       .filter(p => {
@@ -5297,6 +5716,11 @@ html.dark .canvas-grid {
                             toggleStar={toggleStar}
                             activeNotebookId={activeNotebookId}
                             activeTabId={activeTabId}
+                          />
+                      ) : activePage.type === 'database' ? (
+                          <TablePage
+                            page={activePage}
+                            onUpdate={(updates) => updatePageMeta(updates)}
                           />
                       ) : activePage.embedUrl ? (
                           // Embedded page (Google Docs/Sheets/Slides, Web, PDF)
@@ -5689,6 +6113,9 @@ html.dark .canvas-grid {
                                       </button>
                                       <button onClick={() => { addCodePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">&lt;/&gt;</span> Code Page
+                                      </button>
+                                      <button onClick={() => { addDatabasePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">🗄️</span> Database
                                       </button>
                                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                       <button onClick={() => {
