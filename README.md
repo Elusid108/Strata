@@ -117,6 +117,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.5.7** - Canvas grid alignment fix: grid background now locks to canvas coordinate system during zoom-to-mouse operations, ensuring grid dots remain aligned with content at all zoom levels.
 - **v2.5.6** - Code Page: Python (Pyodide) support; lazy-load Pyodide, run Python, capture stdout/stderr; Python branch in offline viewer.
 - **v2.5.5** - Code Page: code-type label (Mermaid / HTML / JavaScript) in header; HTML/JS rendered iframes fill the page body.
 - **v2.5.4** - Mermaid page type: diagram pages with header (icon, name, star, edit), pencil-edit modal for Mermaid code, zoom/pan controls (ZoomIn/ZoomOut, scale %, Fit), Alt+wheel zoom-at-cursor, wheel pan (Shift+wheel horizontal), drag-to-pan, viewport persistence (`mermaidViewport`), Drive sync; offline viewer supports Mermaid.

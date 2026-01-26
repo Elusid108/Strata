@@ -102,7 +102,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.6";
+  const APP_VERSION = "2.5.7";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -1283,7 +1283,7 @@ html.dark .canvas-grid {
   };
 
   const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }) => {
-    const canvasData = page.canvasData || { containers: [], paths: [], pageTitle: page.name || 'Untitled Page', transform: { x: 0, y: 0, scale: 1 } };
+    const canvasData = page.canvasData || { containers: [], paths: [], pageTitle: page.name || 'Untitled Page', transform: { x: 32, y: 32, scale: 1 } };
     
     // State
     const [containers, setContainers] = useState(canvasData.containers || []);
@@ -1291,7 +1291,8 @@ html.dark .canvas-grid {
     const [pageTitle, setPageTitle] = useState(canvasData.pageTitle || page.name || 'Untitled Page');
     const [history, setHistory] = useState({ past: [], future: [] });
     const [appClipboard, setAppClipboard] = useState(null);
-    const [transform, setTransform] = useState(canvasData.transform || { x: 0, y: 0, scale: 1 });
+    const initialTransform = canvasData.transform || { x: 32, y: 32, scale: 1 };
+    const [transform, setTransform] = useState(initialTransform);
     const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
     const [tool, setTool] = useState('cursor');
     const [selectedId, setSelectedId] = useState(null);
@@ -1305,6 +1306,8 @@ html.dark .canvas-grid {
     const [drawInfo, setDrawInfo] = useState(null);
     const canvasRef = useRef(null);
     const [currentDate] = useState(getFormattedDate());
+    const [showIconPicker, setShowIconPicker] = useState(false);
+    const iconPickerRef = useRef(null);
 
     // Initialize from page data when page changes
     useEffect(() => {
@@ -1315,7 +1318,9 @@ html.dark .canvas-grid {
       const title = data.pageTitle || page.name || 'Untitled Page';
       setPageTitle(title);
       // Load transform state or default to center view
-      setTransform(data.transform || { x: 0, y: 0, scale: 1 });
+      const fallbackTransform = { x: 32, y: 32, scale: 1 };
+      const newTransform = data.transform || fallbackTransform;
+      setTransform(newTransform);
       
       // Initialize with default container if no data exists
       if (!data.containers || data.containers.length === 0) {
@@ -1331,6 +1336,18 @@ html.dark .canvas-grid {
         setPageTitle(page.name);
       }
     }, [page.name]);
+
+    // Close icon picker when clicking outside
+    useEffect(() => {
+      if (!showIconPicker) return;
+      const handleClickOutside = (e) => {
+        if (iconPickerRef.current && !iconPickerRef.current.contains(e.target)) {
+          setShowIconPicker(false);
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }, [showIconPicker]);
 
     // Save to page data (including transform)
     useEffect(() => {
@@ -1453,7 +1470,8 @@ html.dark .canvas-grid {
         }
         if (e.altKey && e.key === '0') {
           e.preventDefault();
-          setTransform({ x: 0, y: 0, scale: 1 });
+          const resetTransform = { x: 32, y: 32, scale: 1 };
+          setTransform(resetTransform);
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
           handleCopy();
@@ -1536,37 +1554,31 @@ html.dark .canvas-grid {
 
     const handleWheel = useCallback((e) => {
       const currentTransform = transformRef.current;
-      if (e.altKey) {
-        if (e.preventDefault) e.preventDefault();
-        const zoomSensitivity = 0.001;
-        const delta = -e.deltaY * zoomSensitivity;
-        const newScale = Math.min(Math.max(0.1, currentTransform.scale + delta), 5);
-        
-        const rect = canvasRef.current ? canvasRef.current.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-        const mouseX = (e.clientX !== undefined ? e.clientX : rect.left + rect.width/2) - rect.left;
-        const mouseY = (e.clientY !== undefined ? e.clientY : rect.top + rect.height/2) - rect.top;
+      if (e.preventDefault) e.preventDefault();
+      const zoomSensitivity = 0.001;
+      const delta = -e.deltaY * zoomSensitivity;
+      const newScale = Math.min(Math.max(0.1, currentTransform.scale + delta), 5);
+      
+      const rect = canvasRef.current ? canvasRef.current.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      const mouseX = (e.clientX !== undefined ? e.clientX : rect.left + rect.width/2) - rect.left;
+      const mouseY = (e.clientY !== undefined ? e.clientY : rect.top + rect.height/2) - rect.top;
 
-        // Account for canvas-background offset (-25000px)
-        // The transform is applied to a div positioned at -25000px
-        // Canvas point (cx, cy) appears at screen: (-25000 + x + cx * scale, -25000 + y + cy * scale)
-        // So canvas point under mouse: cx = (mouseX + 25000 - x) / scale
-        const canvasOffset = 25000;
-        
-        // Calculate the canvas point under the mouse (in canvas coordinate space)
-        const canvasPointX = (mouseX + canvasOffset - currentTransform.x) / currentTransform.scale;
-        const canvasPointY = (mouseY + canvasOffset - currentTransform.y) / currentTransform.scale;
+      // Account for canvas-background offset (-25000px)
+      // The transform is applied to a div positioned at -25000px
+      // Canvas point (cx, cy) appears at screen: (-25000 + x + cx * scale, -25000 + y + cy * scale)
+      // So canvas point under mouse: cx = (mouseX + 25000 - x) / scale
+      const canvasOffset = 25000;
+      
+      // Calculate the canvas point under the mouse (in canvas coordinate space)
+      const canvasPointX = (mouseX + canvasOffset - currentTransform.x) / currentTransform.scale;
+      const canvasPointY = (mouseY + canvasOffset - currentTransform.y) / currentTransform.scale;
 
-        // After zoom, keep same canvas point under mouse: mouseX = -25000 + newX + cx * newScale
-        // So: newX = mouseX + 25000 - cx * newScale
-        const newX = mouseX + canvasOffset - canvasPointX * newScale;
-        const newY = mouseY + canvasOffset - canvasPointY * newScale;
+      // After zoom, keep same canvas point under mouse: mouseX = -25000 + newX + cx * newScale
+      // So: newX = mouseX + 25000 - cx * newScale
+      const newX = mouseX + canvasOffset - canvasPointX * newScale;
+      const newY = mouseY + canvasOffset - canvasPointY * newScale;
 
-        setTransform({ x: newX, y: newY, scale: newScale });
-      } else if (e.shiftKey) {
-        setTransform(prev => ({ ...prev, x: prev.x - e.deltaY }));
-      } else {
-        setTransform(prev => ({ ...prev, y: prev.y - e.deltaY }));
-      }
+      setTransform({ x: newX, y: newY, scale: newScale });
     }, []);
 
     // Attach wheel event listener with non-passive option to allow preventDefault
@@ -1746,10 +1758,6 @@ html.dark .canvas-grid {
           bounds: newBounds
         };
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:1550',message:'Adding point to live draw',data:{newPoint,coords,updatedPathPoints:updatedPath.points,updatedPathBounds:updatedPath.bounds,transformX:transform.x,transformY:transform.y,transformScale:transform.scale},timestamp:Date.now(),sessionId:'debug-session',runId:'run7',hypothesisId:'I'})}).catch(()=>{});
-        // #endregion
-        
         setDrawInfo({ ...drawInfo, currentPath: updatedPath });
       }
     };
@@ -1772,10 +1780,6 @@ html.dark .canvas-grid {
             width: p.bounds.maxX - p.bounds.minX, 
             height: p.bounds.maxY - p.bounds.minY,
         };
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:1581',message:'Finalizing path',data:{originalPath:p,finalPath,originalPoints:p.points,normalizedPoints,finalX,finalY,width:finalPath.width,height:finalPath.height},timestamp:Date.now(),sessionId:'debug-session',runId:'run7',hypothesisId:'I'})}).catch(()=>{});
-        // #endregion
         
         setPaths([...paths, finalPath]);
       }
@@ -2035,33 +2039,54 @@ html.dark .canvas-grid {
                top: '-25000px',
                transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
                backgroundSize: '20px 20px',
-               backgroundPosition: `${(((-transform.x % 20) + 20) % 20)}px ${(((-transform.y % 20) + 20) % 20)}px`,
+               backgroundPosition: `${(25000 % 20)}px ${(25000 % 20)}px`,
                width: '50000px',
                height: '50000px',
                pointerEvents: 'auto'
              }}
            >
              <div className="absolute w-[600px] select-none pointer-events-none" style={{ top: '25000px', left: '25000px' }}>
-               <input 
-                 value={pageTitle}
-                 onChange={(e) => { 
-                   const newTitle = e.target.value;
-                   setPageTitle(newTitle);
-                   // Immediately update page name to keep them in sync
-                   onUpdate({ name: newTitle });
-                 }}
-                 onBlur={() => {
-                   // Ensure final sync on blur
-                   if (pageTitle !== page.name) {
-                     onUpdate({ name: pageTitle });
-                   }
-                 }}
-                 className="text-5xl font-light text-gray-800 dark:text-gray-200 bg-transparent border-none outline-none w-full placeholder-gray-300 dark:placeholder-gray-500 pointer-events-auto"
-                 placeholder="Page Title"
-               />
-               <div className="text-sm text-gray-400 dark:text-gray-500 mt-2 flex gap-4">
-                  <span>{currentDate.date}</span>
-                  <span>{currentDate.time}</span>
+               <div className="flex items-start gap-3 pointer-events-auto">
+                 <div className="relative" ref={iconPickerRef}>
+                   <div 
+                     className="text-5xl drop-shadow-sm select-none cursor-pointer hover:bg-gray-100/50 rounded p-2 transition-colors"
+                     onClick={() => setShowIconPicker(!showIconPicker)}
+                   >
+                     {page.icon || '🎨'}
+                   </div>
+                   {showIconPicker && (
+                     <div className="absolute top-full left-0 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-xl rounded-lg p-2 w-64 h-64 overflow-y-auto animate-fade-in" style={{ marginTop: '4px' }}>
+                       <div className="grid grid-cols-5 gap-1">
+                         {EMOJIS.map(emoji => (
+                           <div key={emoji} className="text-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded text-center" onClick={() => { onUpdate({ icon: emoji }); setShowIconPicker(false); }}>{emoji}</div>
+                         ))}
+                       </div>
+                     </div>
+                   )}
+                 </div>
+                 <div className="flex-1">
+                   <input 
+                     value={pageTitle}
+                     onChange={(e) => { 
+                       const newTitle = e.target.value;
+                       setPageTitle(newTitle);
+                       // Immediately update page name to keep them in sync
+                       onUpdate({ name: newTitle });
+                     }}
+                     onBlur={() => {
+                       // Ensure final sync on blur
+                       if (pageTitle !== page.name) {
+                         onUpdate({ name: pageTitle });
+                       }
+                     }}
+                     className="text-5xl font-light text-gray-800 dark:text-gray-200 bg-transparent border-none outline-none w-full placeholder-gray-300 dark:placeholder-gray-500"
+                     placeholder="Page Title"
+                   />
+                   <div className="text-sm text-gray-400 dark:text-gray-500 mt-2 flex gap-4">
+                     <span>{currentDate.date}</span>
+                     <span>{currentDate.time}</span>
+                   </div>
+                 </div>
                </div>
              </div>
 
@@ -2209,16 +2234,18 @@ html.dark .canvas-grid {
     const [codeEditType, setCodeEditType] = useState('mermaid');
     const [editingName, setEditingName] = useState(false);
     const [mermaidError, setMermaidError] = useState(null);
+    const [currentTheme, setCurrentTheme] = useState(() => document.documentElement.classList.contains('dark') ? 'dark' : 'light');
     const [iframeError, setIframeError] = useState(null);
     const [pythonOutput, setPythonOutput] = useState('');
     const [pythonError, setPythonError] = useState(null);
     const [pythonLoading, setPythonLoading] = useState(false);
     const [pythonRunning, setPythonRunning] = useState(false);
     const diagramContainerRef = useRef(null);
-    const mermaidInitRef = useRef(false);
+    const mermaidInitRef = useRef(null); // Store current theme instead of boolean
     const viewportRef = useRef(null);
     const transformRef = useRef({ x: 0, y: 0, scale: 1 });
     const persistViewportRef = useRef(null);
+    const hasAppliedInitialFitRef = useRef(false);
     const savedViewport = page.mermaidViewport || { x: 0, y: 0, scale: 1 };
     const [transform, setTransform] = useState(savedViewport);
     const [dragInfo, setDragInfo] = useState(null);
@@ -2269,6 +2296,53 @@ html.dark .canvas-grid {
 
     const clampScale = (s) => Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, s));
 
+    const calculateZoomToFit = () => {
+      if (!diagramContainerRef.current || !viewportRef.current) {
+        return { x: 0, y: 0, scale: 1 };
+      }
+
+      // Find the SVG element inside the diagram container
+      const svg = diagramContainerRef.current.querySelector('svg');
+      if (!svg) {
+        return { x: 0, y: 0, scale: 1 };
+      }
+
+      // Get SVG dimensions
+      let svgWidth, svgHeight;
+      const viewBox = svg.getAttribute('viewBox');
+      if (viewBox) {
+        const parts = viewBox.split(/\s+/);
+        svgWidth = parseFloat(parts[2]) || svg.clientWidth || 0;
+        svgHeight = parseFloat(parts[3]) || svg.clientHeight || 0;
+      } else {
+        svgWidth = svg.clientWidth || svg.getBBox?.()?.width || 0;
+        svgHeight = svg.clientHeight || svg.getBBox?.()?.height || 0;
+      }
+
+      // Get viewport dimensions
+      const viewportRect = viewportRef.current.getBoundingClientRect();
+      const viewportWidth = viewportRect.width || 0;
+      const viewportHeight = viewportRect.height || 0;
+
+      // Handle edge cases
+      if (svgWidth <= 0 || svgHeight <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+        return { x: 0, y: 0, scale: 1 };
+      }
+
+      // Calculate scale with 10% padding (0.9 factor)
+      const scaleX = (viewportWidth * 0.9) / svgWidth;
+      const scaleY = (viewportHeight * 0.9) / svgHeight;
+      const scale = clampScale(Math.min(scaleX, scaleY));
+
+      // Calculate centered position
+      const scaledWidth = svgWidth * scale;
+      const scaledHeight = svgHeight * scale;
+      const x = (viewportWidth - scaledWidth) / 2;
+      const y = (viewportHeight - scaledHeight) / 2;
+
+      return { x, y, scale };
+    };
+
     const handleMermaidZoom = (delta, towardCenter = true) => {
       const rect = viewportRef.current ? viewportRef.current.getBoundingClientRect() : null;
       const cx = rect ? rect.width / 2 : 0;
@@ -2287,7 +2361,8 @@ html.dark .canvas-grid {
     };
 
     const handleMermaidFit = () => {
-      setTransform({ x: 0, y: 0, scale: 1 });
+      const fitTransform = calculateZoomToFit();
+      setTransform(fitTransform);
     };
 
     const handleMermaidWheel = useCallback((e) => {
@@ -2295,24 +2370,15 @@ html.dark .canvas-grid {
       const rect = viewportRef.current ? viewportRef.current.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
       const vx = e.clientX - rect.left;
       const vy = e.clientY - rect.top;
-      if (e.altKey) {
-        e.preventDefault();
-        const zoomSensitivity = 0.002;
-        const delta = -e.deltaY * zoomSensitivity * t.scale;
-        const newScale = clampScale(t.scale + delta);
-        const dx = (vx - t.x) / t.scale;
-        const dy = (vy - t.y) / t.scale;
-        const newX = vx - dx * newScale;
-        const newY = vy - dy * newScale;
-        setTransform({ x: newX, y: newY, scale: newScale });
-      } else {
-        e.preventDefault();
-        if (e.shiftKey) {
-          setTransform(prev => ({ ...prev, x: prev.x - e.deltaY }));
-        } else {
-          setTransform(prev => ({ ...prev, y: prev.y - e.deltaY }));
-        }
-      }
+      e.preventDefault();
+      const zoomSensitivity = 0.002;
+      const delta = -e.deltaY * zoomSensitivity * t.scale;
+      const newScale = clampScale(t.scale + delta);
+      const dx = (vx - t.x) / t.scale;
+      const dy = (vy - t.y) / t.scale;
+      const newX = vx - dx * newScale;
+      const newY = vy - dy * newScale;
+      setTransform({ x: newX, y: newY, scale: newScale });
     }, []);
 
     useEffect(() => {
@@ -2352,32 +2418,105 @@ html.dark .canvas-grid {
     useEffect(() => {
       if (codeType !== 'mermaid' || !code || !diagramContainerRef.current) {
         setMermaidError(null);
+        hasAppliedInitialFitRef.current = false;
         return;
       }
       if (typeof window.mermaid === 'undefined') {
         setMermaidError('Mermaid library not loaded');
+        hasAppliedInitialFitRef.current = false;
         return;
       }
+      // Reset the fit flag when chart code changes
+      hasAppliedInitialFitRef.current = false;
       const el = diagramContainerRef.current;
       el.innerHTML = '';
       const pre = document.createElement('pre');
       pre.className = 'mermaid';
       pre.textContent = code;
       el.appendChild(pre);
-      if (!mermaidInitRef.current) {
+      // Detect dark mode and use appropriate theme
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      const mermaidTheme = isDarkMode ? 'dark' : 'default';
+      
+      // Reinitialize if theme changed or not initialized yet
+      if (!mermaidInitRef.current || mermaidInitRef.current !== mermaidTheme) {
         try {
-          window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
-          mermaidInitRef.current = true;
+          window.mermaid.initialize({ startOnLoad: false, theme: mermaidTheme });
+          mermaidInitRef.current = mermaidTheme;
         } catch (e) {
           setMermaidError('Failed to initialize Mermaid');
           return;
         }
       }
       setMermaidError(null);
-      window.mermaid.run({ nodes: [pre] }).catch(() => {
+      window.mermaid.run({ nodes: [pre] }).then(() => {
+        // Wait for SVG to be rendered in the DOM
+        const waitForSvg = () => {
+          const svg = el.querySelector('svg');
+          if (svg && !hasAppliedInitialFitRef.current) {
+            // Use requestAnimationFrame to ensure layout is complete
+            requestAnimationFrame(() => {
+              if (!hasAppliedInitialFitRef.current && diagramContainerRef.current && viewportRef.current) {
+                const fitTransform = calculateZoomToFit();
+                setTransform(fitTransform);
+                hasAppliedInitialFitRef.current = true;
+              }
+            });
+          } else if (!svg) {
+            // SVG not ready yet, try again
+            setTimeout(waitForSvg, 50);
+          }
+        };
+        waitForSvg();
+      }).catch(() => {
         setMermaidError('Invalid Mermaid syntax');
+        hasAppliedInitialFitRef.current = false;
       });
     }, [page.id, codeType, code]);
+
+    // Watch for theme changes
+    useEffect(() => {
+      const observer = new MutationObserver(() => {
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        const newTheme = isDarkMode ? 'dark' : 'light';
+        if (newTheme !== currentTheme) {
+          setCurrentTheme(newTheme);
+        }
+      });
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+      return () => observer.disconnect();
+    }, [currentTheme]);
+
+    // Re-render diagram when theme changes
+    useEffect(() => {
+      if (codeType !== 'mermaid' || !code || !diagramContainerRef.current) return;
+      
+      const isDarkMode = currentTheme === 'dark';
+      const mermaidTheme = isDarkMode ? 'dark' : 'default';
+      
+      // Only reinitialize if theme changed
+      if (mermaidInitRef.current !== mermaidTheme) {
+        const el = diagramContainerRef.current;
+        const svg = el.querySelector('svg');
+        if (svg && code) {
+          try {
+            window.mermaid.initialize({ startOnLoad: false, theme: mermaidTheme });
+            mermaidInitRef.current = mermaidTheme;
+            // Clear and re-render the diagram with new theme
+            el.innerHTML = '';
+            const pre = document.createElement('pre');
+            pre.className = 'mermaid';
+            pre.textContent = code;
+            el.appendChild(pre);
+            window.mermaid.run({ nodes: [pre] }).catch(() => {
+              setMermaidError('Invalid Mermaid syntax');
+            });
+          } catch (e) {
+            setMermaidError('Failed to reinitialize Mermaid');
+          }
+        }
+      }
+    }, [codeType, code, currentTheme]);
 
     useEffect(() => {
       if (codeType !== 'python' || !code) {
