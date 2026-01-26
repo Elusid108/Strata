@@ -121,6 +121,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.3** - Map block enhancements: address field persistence with reverse geocoding, improved geocoding flexibility (partial addresses, multiple result handling), automatic marker placement on geocode, real-time zoom and lock updates, fixed `/map` command timing issue, fixed map block dragging on canvas pages
 - **v2.6.2** - UID-based structure system: implemented new StrataStructure format with flat nodes map and UID-based file operations. Added migration script, reconciler for remote-first boot, and updated offline viewer to use strata_structure.json
 - **v2.6.1** - Fixed Drive data loading: notebooks/tabs now correctly load from Drive after login instead of reverting to localStorage
 - **v2.6.0** - Fixed duplicate folder creation race condition, added Drive cleanup button in settings to remove old temporary files, fixed missing API function errors

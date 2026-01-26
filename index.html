@@ -15,6 +15,8 @@
     <script src="config.js"></script>
     <script src="google-api.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>/* DocNotes Webapp Styles */
 
 /* List Styles for Nested Lists */
@@ -102,7 +104,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.1";
+  const APP_VERSION = "2.6.3";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -491,6 +493,532 @@ html.dark .canvas-grid {
   const Palette = (props) => <IconBase {...props}><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></IconBase>;
   const Circle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/></IconBase>;
 
+  // --- MapConfigPopup Component ---
+  const MapConfigPopup = ({ blockId, currentData, onSave, onClose, position }) => {
+    // Initialize address from currentData if available, or try to reverse geocode the center
+    const [address, setAddress] = useState(currentData?.address || '');
+    const [zoom, setZoom] = useState(currentData?.zoom || 13);
+    const [locked, setLocked] = useState(currentData?.locked || false);
+    const [geocoding, setGeocoding] = useState(false);
+    const [error, setError] = useState('');
+    const [tempCenter, setTempCenter] = useState(currentData?.center || null);
+    
+    // Reverse geocode center to get address if address is not set
+    useEffect(() => {
+      if (!address && currentData?.center && currentData.center.length === 2) {
+        const [lat, lng] = currentData.center;
+        // Reverse geocode to get address
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+          headers: {
+            'User-Agent': 'Strata Notebook App'
+          }
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.display_name) {
+            setAddress(data.display_name);
+          }
+        })
+        .catch(() => {
+          // Silently fail - user can enter address manually
+        });
+      }
+    }, []);
+    
+    // Real-time zoom and lock update effect
+    useEffect(() => {
+      if ((tempCenter || currentData?.center) && onSave) {
+        // Update map center and zoom in real-time
+        const center = tempCenter || currentData.center;
+        const currentMarkers = currentData?.markers || [];
+        const currentAddress = address || currentData?.address || '';
+        
+        onSave({
+          center: center,
+          zoom: zoom,
+          locked: locked,
+          markers: currentMarkers,
+          address: currentAddress
+        });
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [zoom, locked]);
+
+    const parseCoordinates = (input) => {
+      // Try to match lat,lng or lat lng formats
+      const coordPattern1 = /^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/;
+      const coordPattern2 = /^(-?\d+\.?\d*)\s+(-?\d+\.?\d*)$/;
+      
+      let match = input.match(coordPattern1) || input.match(coordPattern2);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return [lat, lng];
+        }
+      }
+      return null;
+    };
+
+    const handleGeocode = async () => {
+      setError('');
+      setGeocoding(true);
+      
+      try {
+        const addressInput = address.trim();
+        
+        // First try to parse as coordinates
+        const coords = parseCoordinates(addressInput);
+        if (coords) {
+          const [lat, lng] = coords;
+          setTempCenter([lat, lng]);
+          
+          // Add a marker at this location
+          const newMarker = {
+            lat: lat,
+            lng: lng,
+            label: addressInput || 'Location'
+          };
+          
+          const updatedMarkers = [...(currentData?.markers || []), newMarker];
+          
+          onSave({
+            center: [lat, lng],
+            zoom: zoom,
+            locked: locked,
+            markers: updatedMarkers,
+            address: addressInput // Keep the address for editing
+          });
+          
+          // Don't close - keep popup open for further editing
+          setGeocoding(false);
+          return;
+        }
+
+        // If not coordinates, geocode the address
+        if (!addressInput) {
+          setError('Please enter an address or GPS coordinates');
+          setGeocoding(false);
+          return;
+        }
+
+        // More flexible geocoding - try with different query formats
+        let geocodeQuery = addressInput;
+        
+        // Try geocoding with the address
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(geocodeQuery)}&limit=5&addressdetails=1`,
+          {
+            headers: {
+              'User-Agent': 'Strata Notebook App'
+            }
+          }
+        );
+        
+        if (!response.ok) {
+          throw new Error('Geocoding service unavailable');
+        }
+
+        const data = await response.json();
+        if (data && data.length > 0) {
+          // Use the first (most relevant) result
+          const result = data[0];
+          const lat = parseFloat(result.lat);
+          const lon = parseFloat(result.lon);
+          
+          setTempCenter([lat, lon]);
+          
+          // Add a marker at the geocoded location
+          const displayName = result.display_name || addressInput;
+          const newMarker = {
+            lat: lat,
+            lng: lon,
+            label: displayName
+          };
+          
+          const updatedMarkers = [...(currentData?.markers || []), newMarker];
+          
+          // Update with the geocoded location and keep the address
+          onSave({
+            center: [lat, lon],
+            zoom: zoom,
+            locked: locked,
+            markers: updatedMarkers,
+            address: addressInput // Keep the original input for editing
+          });
+          
+          // Update address field with the display name for better UX
+          setAddress(displayName);
+          
+          // Don't close - keep popup open for further editing
+          setGeocoding(false);
+        } else {
+          setError('Address not found. Please try a different address or use GPS coordinates (lat, lng)');
+          setGeocoding(false);
+        }
+      } catch (err) {
+        setError(err.message || 'Failed to geocode address. Please try again or use GPS coordinates (lat, lng)');
+        setGeocoding(false);
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter' && !geocoding) {
+        handleGeocode();
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    // Calculate smart positioning
+    const getPopupStyle = () => {
+      if (!position) return { top: 0, left: 0 };
+      
+      const estimatedPopupHeight = 280; // Approximate popup height
+      const estimatedPopupWidth = 320;
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      const padding = 10; // Padding from viewport edges
+      
+      let top = position.top;
+      let left = position.left;
+      let transform = '';
+      
+      // Check if there's enough space above
+      if (position.top < estimatedPopupHeight + padding) {
+        // Not enough space above, position below
+        top = position.top;
+        transform = '';
+      } else {
+        // Position above
+        top = position.top;
+        transform = 'translateY(-100%)';
+      }
+      
+      // Ensure popup doesn't go off left edge
+      if (left < padding) {
+        left = padding;
+      }
+      
+      // Ensure popup doesn't go off right edge
+      if (left + estimatedPopupWidth > viewportWidth - padding) {
+        left = viewportWidth - estimatedPopupWidth - padding;
+      }
+      
+      // Ensure popup doesn't go off bottom edge (when positioned below)
+      if (!transform && top + estimatedPopupHeight > viewportHeight - padding) {
+        top = viewportHeight - estimatedPopupHeight - padding;
+      }
+      
+      return {
+        top: `${top}px`,
+        left: `${left}px`,
+        transform: transform || 'none',
+        marginTop: transform ? '-8px' : '8px'
+      };
+    };
+
+    return (
+      <div 
+        className="fixed bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-xl rounded-lg p-4 z-[10000] min-w-[320px]"
+        style={getPopupStyle()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Configure Map</h3>
+          <button 
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Address or GPS Coordinates
+            </label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="e.g., New York, NY or 40.7128, -74.0060"
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Enter an address or coordinates (lat, lng). Partial addresses work too.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Zoom Level
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="19"
+              value={zoom}
+              onChange={(e) => {
+                const newZoom = parseInt(e.target.value) || 13;
+                setZoom(newZoom);
+                // Real-time update will be handled by useEffect
+              }}
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id={`lock-${blockId}`}
+              checked={locked}
+              onChange={(e) => {
+                setLocked(e.target.checked);
+                // Real-time update will be handled by useEffect
+              }}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <label 
+              htmlFor={`lock-${blockId}`}
+              className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+            >
+              Lock map (prevent interaction)
+            </label>
+          </div>
+
+          {error && (
+            <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={handleGeocode}
+              disabled={geocoding}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {geocoding ? 'Searching...' : 'Set Location & Add Pin'}
+            </button>
+            <button
+              onClick={() => {
+                // Save current state before closing
+                if (tempCenter || currentData?.center) {
+                  onSave({
+                    center: tempCenter || currentData.center,
+                    zoom: zoom,
+                    locked: locked,
+                    markers: currentData?.markers || [],
+                    address: address
+                  });
+                }
+                onClose();
+              }}
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // --- MapBlock Component ---
+  const MapBlock = ({ data, onUpdate, readOnly = false, height = 400, disableScrollWheel = false, locked = false }) => {
+    const mapRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const markersRef = useRef([]);
+    const onUpdateRef = useRef(onUpdate);
+    const dataRef = useRef(data);
+    
+    // Keep refs updated
+    useEffect(() => {
+      onUpdateRef.current = onUpdate;
+      dataRef.current = data;
+    }, [onUpdate, data]);
+
+    useEffect(() => {
+      if (!mapRef.current || mapInstanceRef.current) return;
+
+      const mapData = data || {
+        center: [40.7128, -74.0060],
+        zoom: 13,
+        markers: []
+      };
+
+      // Initialize Leaflet map
+      const map = L.map(mapRef.current, {
+        center: mapData.center || [40.7128, -74.0060],
+        zoom: mapData.zoom || 13,
+        scrollWheelZoom: !disableScrollWheel && !locked,
+        dragging: !locked,
+        touchZoom: !locked,
+        doubleClickZoom: !locked,
+        boxZoom: !locked,
+        keyboard: !locked
+      });
+
+      // Add OpenStreetMap tile layer
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+      }).addTo(map);
+
+      mapInstanceRef.current = map;
+
+      // Add existing markers
+      if (mapData.markers && mapData.markers.length > 0) {
+        const mapId = mapRef.current.id || `map_${Date.now()}`;
+        if (!mapRef.current.id) mapRef.current.id = mapId;
+        mapData.markers.forEach((markerData, index) => {
+          const marker = L.marker([markerData.lat, markerData.lng]).addTo(map);
+          const popupContent = readOnly 
+            ? markerData.label || 'Marker'
+            : `<input type="text" value="${markerData.label || 'New Point'}" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; width: 150px;" onblur="window.updateMarkerLabel_${mapId}(${index}, this.value)" />`;
+          marker.bindPopup(popupContent);
+          markersRef.current.push({ marker, data: markerData, index });
+        });
+      }
+
+      // Store update function globally for popup input (using unique ID to avoid conflicts)
+      if (!readOnly && onUpdate) {
+        const mapId = mapRef.current.id || `map_${Date.now()}`;
+        if (!mapRef.current.id) mapRef.current.id = mapId;
+        window[`updateMarkerLabel_${mapId}`] = (index, newLabel) => {
+          const mapData = dataRef.current || { center: [40.7128, -74.0060], zoom: 13, markers: [] };
+          const updatedMarkers = [...(mapData.markers || [])];
+          if (updatedMarkers[index]) {
+            updatedMarkers[index] = { ...updatedMarkers[index], label: newLabel };
+            if (onUpdateRef.current) {
+              onUpdateRef.current({
+                ...mapData,
+                markers: updatedMarkers
+              });
+            }
+          }
+        };
+      }
+
+      // Handle map click to add markers (when not readOnly and not locked)
+      if (!readOnly && !locked) {
+        map.on('click', (e) => {
+          const newMarker = {
+            lat: e.latlng.lat,
+            lng: e.latlng.lng,
+            label: 'New Point'
+          };
+          
+          const marker = L.marker([newMarker.lat, newMarker.lng]).addTo(map);
+          const markerIndex = (mapData.markers || []).length;
+          const mapId = mapRef.current.id || `map_${Date.now()}`;
+          if (!mapRef.current.id) mapRef.current.id = mapId;
+          const popupContent = `<input type="text" value="${newMarker.label}" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; width: 150px;" onblur="window.updateMarkerLabel_${mapId}(${markerIndex}, this.value)" />`;
+          marker.bindPopup(popupContent);
+          marker.openPopup();
+          
+          const updatedMarkers = [...(mapData.markers || []), newMarker];
+          markersRef.current.push({ marker, data: newMarker, index: markerIndex });
+          
+          if (onUpdate) {
+            onUpdate({
+              ...mapData,
+              markers: updatedMarkers
+            });
+          }
+        });
+      }
+
+      // Cleanup function
+      return () => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+          markersRef.current = [];
+        }
+      };
+    }, []); // Only run once on mount
+
+    // Update markers when data changes
+    useEffect(() => {
+      if (!mapInstanceRef.current || !data) return;
+
+      const mapData = data;
+      const currentMarkers = markersRef.current.map(m => m.data);
+      const newMarkers = mapData.markers || [];
+
+      // Remove markers that are no longer in data
+      markersRef.current.forEach(({ marker }) => {
+        mapInstanceRef.current.removeLayer(marker);
+      });
+      markersRef.current = [];
+
+      // Add new markers
+      newMarkers.forEach((markerData, index) => {
+        const marker = L.marker([markerData.lat, markerData.lng]).addTo(mapInstanceRef.current);
+        const mapId = mapRef.current?.id || `map_${Date.now()}`;
+        const popupContent = readOnly 
+          ? markerData.label || 'Marker'
+          : `<input type="text" value="${markerData.label || 'New Point'}" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px; width: 150px;" onblur="window.updateMarkerLabel_${mapId}(${index}, this.value)" />`;
+        marker.bindPopup(popupContent);
+        markersRef.current.push({ marker, data: markerData, index });
+      });
+    }, [data?.markers]);
+
+    // Update map center/zoom when data changes
+    useEffect(() => {
+      if (!mapInstanceRef.current || !data) return;
+      
+      const mapData = data;
+      if (mapData.center) {
+        mapInstanceRef.current.setView(mapData.center, mapData.zoom || 13);
+      }
+    }, [data?.center, data?.zoom]);
+
+    // Update locked state
+    useEffect(() => {
+      if (!mapInstanceRef.current) return;
+      
+      if (locked) {
+        mapInstanceRef.current.dragging.disable();
+        mapInstanceRef.current.touchZoom.disable();
+        mapInstanceRef.current.doubleClickZoom.disable();
+        mapInstanceRef.current.scrollWheelZoom.disable();
+        mapInstanceRef.current.boxZoom.disable();
+        mapInstanceRef.current.keyboard.disable();
+      } else {
+        mapInstanceRef.current.dragging.enable();
+        mapInstanceRef.current.touchZoom.enable();
+        mapInstanceRef.current.doubleClickZoom.enable();
+        if (!disableScrollWheel) {
+          mapInstanceRef.current.scrollWheelZoom.enable();
+        }
+        mapInstanceRef.current.boxZoom.enable();
+        mapInstanceRef.current.keyboard.enable();
+      }
+    }, [locked, disableScrollWheel]);
+
+    // Invalidate map size when height changes (for canvas resizing)
+    useEffect(() => {
+      if (mapInstanceRef.current) {
+        // Use setTimeout to ensure DOM has updated
+        setTimeout(() => {
+          mapInstanceRef.current.invalidateSize();
+        }, 0);
+      }
+    }, [height]);
+
+    return (
+      <div style={{ height: `${height}px`, width: '100%', position: 'relative', pointerEvents: locked ? 'none' : 'auto' }}>
+        <div ref={mapRef} style={{ height: '100%', width: '100%', pointerEvents: locked ? 'none' : 'auto' }} />
+      </div>
+    );
+  };
+
   // --- Constants & Utilities ---
   const COLORS = [
     { name: 'gray', label: 'Gray' }, { name: 'red', label: 'Red' }, { name: 'orange', label: 'Orange' },
@@ -512,6 +1040,7 @@ html.dark .canvas-grid {
     { cmd: 'link', aliases: ['link', 'url', 'bookmark'], label: 'Link', desc: 'Web bookmark', type: 'link' },
     { cmd: 'div', aliases: ['div', 'divider', 'hr', 'line'], label: 'Divider', desc: 'Horizontal line', type: 'divider' },
     { cmd: 'gdoc', aliases: ['gdoc', 'gdrive', 'google'], label: 'Google Drive File', desc: 'Embed Google Doc/Sheet/Slide', type: 'gdoc' },
+    { cmd: 'map', aliases: ['map', 'location', 'gps'], label: 'Map', desc: 'Interactive map with markers', type: 'map' },
   ];
 
   const BLOCK_TYPES = [
@@ -770,9 +1299,14 @@ html.dark .canvas-grid {
                       const matchedCmd = SLASH_COMMANDS.find(c => c.aliases.includes(cmd));
                       if (matchedCmd) {
                           e.preventDefault();
+                          e.stopPropagation();
                           // Clear the contentEditable content before converting
                           contentEditableRef.current.innerHTML = '';
                           onConvert(matchedCmd.type);
+                          // For divider, don't create a new block - the conversion handles it
+                          if (matchedCmd.type === 'divider') {
+                              return;
+                          }
                           return;
                       }
                   }
@@ -917,7 +1451,7 @@ html.dark .canvas-grid {
       );
   });
 
-  const BlockComponent = memo(({ block, rowId, colId, onUpdate, onDelete, onInsertAfter, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus, isLastBlock }) => {
+  const BlockComponent = memo(({ block, rowId, colId, onUpdate, onDelete, onInsertAfter, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus, isLastBlock, onMapConfig }) => {
       const isTarget = dropTarget && dropTarget.blockId === block.id;
       const indicatorStyle = isTarget ? getDropIndicatorClass(dropTarget.position) : '';
 
@@ -930,9 +1464,49 @@ html.dark .canvas-grid {
 
       const handleConvert = (newType) => {
           const isMedia = ['image', 'video', 'link'].includes(newType);
-          onUpdate(block.id, { type: newType, content: isMedia ? '' : '', url: '' });
+          const isStructural = ['divider', 'map'].includes(newType);
+          onUpdate(block.id, { 
+              type: newType, 
+              content: (isMedia || isStructural) ? '' : block.content, 
+              url: isMedia ? '' : block.url 
+          });
           if (newType === 'divider') {
-              onInsertAfter(block.id, 'text');
+              // Ensure divider is visible by forcing a re-render
+              setTimeout(() => {
+                  onInsertAfter(block.id, 'text');
+              }, 0);
+          } else if (newType === 'map') {
+              // Initialize map data and show config popup
+              onUpdate(block.id, { 
+                  type: 'map', 
+                  mapData: { 
+                      center: [40.7128, -74.0060], 
+                      zoom: 13, 
+                      markers: [],
+                      locked: false
+                  } 
+              });
+              // Show config popup - use longer timeout to ensure React has re-rendered
+              if (onMapConfig) {
+                  setTimeout(() => {
+                      const blockElement = document.querySelector(`[data-block-id="${block.id}"]`);
+                      if (blockElement) {
+                          const rect = blockElement.getBoundingClientRect();
+                          onMapConfig(block.id, { top: rect.top, left: rect.left });
+                      } else {
+                          // Fallback position - try again after another short delay
+                          setTimeout(() => {
+                              const retryElement = document.querySelector(`[data-block-id="${block.id}"]`);
+                              if (retryElement) {
+                                  const rect = retryElement.getBoundingClientRect();
+                                  onMapConfig(block.id, { top: rect.top, left: rect.left });
+                              } else {
+                                  onMapConfig(block.id, { top: window.innerHeight / 2, left: window.innerWidth / 2 });
+                              }
+                          }, 100);
+                      }
+                  }, 200);
+              }
           } else if (onRequestFocus) {
               onRequestFocus(block.id);
           }
@@ -1037,7 +1611,22 @@ html.dark .canvas-grid {
                               {block.url && <a href={block.url} target="_blank" className="p-2 hover:bg-blue-100 rounded text-blue-600"><ChevronRight size={16}/></a>}
                           </div>
                       )}
-                      {block.type === 'divider' && <div className="py-2"><hr className="border-t-2 border-gray-200" /></div>}
+                      {block.type === 'divider' && (
+                          <div className="py-2 my-2">
+                              <hr className="border-t-2 border-gray-200 dark:border-gray-600" />
+                          </div>
+                      )}
+                      {block.type === 'map' && (
+                          <div className="space-y-2" data-block-id={block.id}>
+                              <MapBlock 
+                                  data={block.mapData || { center: [40.7128, -74.0060], zoom: 13, markers: [], locked: false }}
+                                  onUpdate={(mapData) => onUpdate(block.id, { mapData })}
+                                  readOnly={false}
+                                  height={400}
+                                  locked={block.mapData?.locked || false}
+                              />
+                          </div>
+                      )}
                       {block.type === 'gdoc' && (
                           <div className="space-y-2">
                               {block.driveFileId ? (
@@ -1126,6 +1715,7 @@ html.dark .canvas-grid {
       { label: 'Bullet List', action: () => onSelect('insertUnorderedList') },
       { label: 'Numbered List', action: () => onSelect('insertOrderedList') },
       { label: 'Insert Date', action: () => onSelect('insertText', new Date().toLocaleDateString()) },
+      { label: 'Map', action: () => onSelect('map', null) },
     ];
 
     return (
@@ -1233,10 +1823,15 @@ html.dark .canvas-grid {
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
       >
         <div 
-          className={`h-4 w-full bg-gray-50 border border-gray-200 border-b-0 rounded-t cursor-move flex items-center justify-center transition-opacity
+          className={`h-4 w-full bg-gray-50 border border-gray-200 border-b-0 rounded-t cursor-move flex items-center justify-center transition-opacity z-50
             ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
           `}
-          onMouseDown={onDragStart}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onDragStart(e);
+          }}
+          style={{ pointerEvents: 'auto', position: 'relative', zIndex: 50 }}
         >
           <GripHorizontal size={12} className="text-gray-400" />
         </div>
@@ -1272,6 +1867,17 @@ html.dark .canvas-grid {
                onBlur={handleInput}
                style={{ cursor: 'text' }}
              />
+           ) : container.type === 'map' ? (
+             <div className="p-0" style={{ height: container.height || 300 }}>
+               <MapBlock 
+                 data={container.mapData || { center: [40.7128, -74.0060], zoom: 13, markers: [], locked: false }}
+                 onUpdate={(mapData) => onUpdate({ mapData, height: container.height || 300 })}
+                 readOnly={false}
+                 height={container.height || 300}
+                 disableScrollWheel={true}
+                 locked={container.mapData?.locked || false}
+               />
+             </div>
            ) : (
              <div className="p-1">
                <img src={container.content} alt="Pasted" className="w-full h-auto pointer-events-none" />
@@ -1299,6 +1905,8 @@ html.dark .canvas-grid {
     const [selectedType, setSelectedType] = useState(null);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     const [slashMenu, setSlashMenu] = useState(null);
+    const [mapConfigContainerId, setMapConfigContainerId] = useState(null);
+    const [mapConfigPosition, setMapConfigPosition] = useState(null);
     const [brushColor, setBrushColor] = useState('#000000');
     const [brushWidth, setBrushWidth] = useState(2);
     const [dragInfo, setDragInfo] = useState(null);
@@ -1884,6 +2492,37 @@ html.dark .canvas-grid {
         handleList(command);
       } else if (command === 'insertText') {
         execCmd('insertText', value);
+      } else if (command === 'map') {
+        // Create a new map container
+        pushToHistory();
+        const newContainer = {
+          id: generateId(),
+          type: 'map',
+          x: slashMenu ? (slashMenu.x - 25000) : 0,
+          y: slashMenu ? (slashMenu.y - 25000 + 20) : 0,
+          width: 400,
+          height: 300,
+          mapData: {
+            center: [40.7128, -74.0060],
+            zoom: 13,
+            markers: [],
+            locked: false
+          }
+        };
+        setContainers([...containers, newContainer]);
+        setSelectedId(newContainer.id);
+        setSelectedType('container');
+        // Show config popup
+        setTimeout(() => {
+          const containerElement = document.getElementById(`container-${newContainer.id}`);
+          if (containerElement) {
+            const rect = containerElement.getBoundingClientRect();
+            setMapConfigPosition({ top: rect.top, left: rect.left });
+          } else {
+            setMapConfigPosition({ top: slashMenu?.y || window.innerHeight / 2, left: slashMenu?.x || window.innerWidth / 2 });
+          }
+          setMapConfigContainerId(newContainer.id);
+        }, 100);
       }
       setSlashMenu(null);
     };
@@ -2136,7 +2775,7 @@ html.dark .canvas-grid {
 
              {/* Containers */}
              {containers.filter(container => {
-               const containerHeight = container.type === 'image' ? 200 : 100; // Approximate height
+               const containerHeight = container.type === 'image' ? 200 : (container.type === 'map' ? (container.height || 300) : 100); // Approximate height
                return isElementVisible(container.x, container.y, container.width || 200, containerHeight);
              }).map(container => (
                <UniversalContainer
@@ -2170,6 +2809,28 @@ html.dark .canvas-grid {
            </div>
         </div>
         {slashMenu && <SlashMenu x={slashMenu.x} y={slashMenu.y} onSelect={handleSlashCommand} onClose={() => setSlashMenu(null)} />}
+        {mapConfigContainerId && mapConfigPosition && (() => {
+            const configContainer = containers.find(c => c.id === mapConfigContainerId);
+            return configContainer && (
+                <MapConfigPopup
+                    blockId={mapConfigContainerId}
+                    currentData={configContainer.mapData}
+                    onSave={(mapData) => {
+                        setContainers(prev => prev.map(c => 
+                            c.id === mapConfigContainerId 
+                                ? { ...c, mapData } 
+                                : c
+                        ));
+                        // Don't close automatically - let user close with Done button
+                    }}
+                    onClose={() => {
+                        setMapConfigContainerId(null);
+                        setMapConfigPosition(null);
+                    }}
+                    position={mapConfigPosition}
+                />
+            );
+        })()}
       </div>
     );
   };
@@ -3119,6 +3780,8 @@ html.dark .canvas-grid {
     const [autoFocusId, setAutoFocusId] = useState(null);
     const [selectedBlockId, setSelectedBlockId] = useState(null);
     const [blockMenu, setBlockMenu] = useState(null);
+    const [mapConfigBlockId, setMapConfigBlockId] = useState(null);
+    const [mapConfigPosition, setMapConfigPosition] = useState(null);
     const [notification, setNotification] = useState(null);
     const [itemToDelete, setItemToDelete] = useState(null);
     const [showIconPicker, setShowIconPicker] = useState(false);
@@ -5351,7 +6014,7 @@ html.dark .canvas-grid {
         const curUrl = block.url || '';
         const textLike = ['text', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'todo', 'link'];
         const isTextLike = (t) => textLike.includes(t);
-        const mediaStructural = ['image', 'video', 'divider', 'gdoc'];
+        const mediaStructural = ['image', 'video', 'divider', 'gdoc', 'map'];
 
         const updates = { type: newType };
 
@@ -5362,6 +6025,24 @@ html.dark .canvas-grid {
                 updates.driveFileId = null;
                 updates.webViewLink = null;
                 updates.mimeType = null;
+            } else if (newType === 'map') {
+                updates.mapData = {
+                    center: [40.7128, -74.0060],
+                    zoom: 13,
+                    markers: [],
+                    locked: false
+                };
+                // Show config popup after conversion
+                setTimeout(() => {
+                    const blockElement = document.querySelector(`[data-block-id="${blockId}"]`);
+                    if (blockElement) {
+                        const rect = blockElement.getBoundingClientRect();
+                        setMapConfigPosition({ top: rect.top, left: rect.left });
+                    } else {
+                        setMapConfigPosition({ top: window.innerHeight / 2, left: window.innerWidth / 2 });
+                    }
+                    setMapConfigBlockId(blockId);
+                }, 100);
             }
         } else {
             updates.url = newType === 'link' ? curUrl : '';
@@ -5392,6 +6073,10 @@ html.dark .canvas-grid {
             updates.driveFileId = null;
             updates.webViewLink = null;
             updates.mimeType = null;
+        }
+        
+        if (newType !== 'map') {
+            updates.mapData = null;
         }
 
         handleUpdateBlock(blockId, updates);
@@ -6011,6 +6696,10 @@ html.dark .canvas-grid {
                                                           onDelete={handleRemoveBlock}
                                                           onInsertAfter={handleInsertBlockAfter}
                                                           autoFocusId={autoFocusId}
+                                                          onMapConfig={(blockId, position) => {
+                                                              setMapConfigBlockId(blockId);
+                                                              setMapConfigPosition(position);
+                                                          }}
                                                           onRequestFocus={handleRequestFocus}
                                                           isSelected={selectedBlockId === block.id}
                                                           onHandleClick={handleBlockHandleClick}
@@ -6176,12 +6865,52 @@ html.dark .canvas-grid {
                           ))}
                       </select>
                   </div>
+                  {menuBlock.type === 'map' && (
+                      <>
+                          <div className="border-t border-gray-100 dark:border-gray-600 my-2"></div>
+                          <button
+                              onClick={() => {
+                                  const blockElement = document.querySelector(`[data-block-id="${blockMenu.id}"]`);
+                                  if (blockElement) {
+                                      const rect = blockElement.getBoundingClientRect();
+                                      setMapConfigPosition({ top: rect.top, left: rect.left });
+                                  } else {
+                                      setMapConfigPosition({ top: blockMenu.top, left: blockMenu.left });
+                                  }
+                                  setMapConfigBlockId(blockMenu.id);
+                                  setBlockMenu(null);
+                              }}
+                              className="w-full text-left text-xs text-blue-600 dark:text-blue-400 p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded flex items-center gap-2 transition-colors"
+                          >
+                              <Edit3 size={12}/> Edit Map
+                          </button>
+                      </>
+                  )}
                   <div className="border-t border-gray-100 dark:border-gray-600 my-2"></div>
                   <div className="grid grid-cols-5 gap-2">
                       <div onClick={() => updateBlockColor(blockMenu.id, null)} className="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-500 flex items-center justify-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"><X size={10}/></div>
                       {COLORS.map(c => ( <div key={c.name} onClick={() => updateBlockColor(blockMenu.id, c.name)} className={`w-5 h-5 rounded-full cursor-pointer bg-${c.name}-500 hover:scale-125 transition-transform shadow-sm`}></div> ))}
                   </div>
               </div>
+              );
+          })()}
+
+          {mapConfigBlockId && mapConfigPosition && (() => {
+              const configBlock = findBlockInRows(rowsForEditor, mapConfigBlockId);
+              return configBlock && (
+                  <MapConfigPopup
+                      blockId={mapConfigBlockId}
+                      currentData={configBlock.mapData}
+                      onSave={(mapData) => {
+                          handleUpdateBlock(mapConfigBlockId, { mapData });
+                          // Don't close automatically - let user close with Done button
+                      }}
+                      onClose={() => {
+                          setMapConfigBlockId(null);
+                          setMapConfigPosition(null);
+                      }}
+                      position={mapConfigPosition}
+                  />
               );
           })()}
 
