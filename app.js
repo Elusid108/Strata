@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.8";
+  const APP_VERSION = "2.5.9";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -6013,22 +6013,14 @@
                                       <button onClick={() => { addCanvasPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">🎨</span> Canvas
                                       </button>
-                                      <button onClick={() => { addCodePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
-                                          <span className="text-lg">&lt;/&gt;</span> Code Page
-                                      </button>
                                       <button onClick={() => { addDatabasePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">🗄️</span> Database
                                       </button>
                                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
-                                      <button onClick={() => { 
-                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
-                                          setShowPageTypeMenu(false);
-                                          GoogleAPI.showDrivePicker((file) => {
-                                              addGooglePage(file);
-                                          });
-                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
-                                          <GoogleG size={18} /> Google Drive
+                                      <button onClick={() => { addCodePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">&lt;/&gt;</span> Code Page
                                       </button>
+                                      <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                       <button onClick={() => { 
                                           setShowDocImport(true);
                                           setShowPageTypeMenu(false); 
@@ -6048,6 +6040,15 @@
                                           <span className="text-lg">📽️</span> Google Slides
                                       </button>
                                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
+                                      <button onClick={() => { 
+                                          if (!isAuthenticated) { showNotification('Sign in with Google first', 'error'); setShowPageTypeMenu(false); return; }
+                                          setShowPageTypeMenu(false);
+                                          GoogleAPI.showDrivePicker((file) => {
+                                              addGooglePage(file);
+                                          });
+                                      }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <GoogleG size={18} /> Google Drive
+                                      </button>
                                       <button onClick={() => { setShowUrlImport(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">📑</span> PDF Document
                                       </button>
