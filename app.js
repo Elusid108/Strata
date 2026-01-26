@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.4";
+  const APP_VERSION = "2.5.5";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -157,17 +157,27 @@
                     const response = await fetch(filePath);
                     if (!response.ok) throw new Error('Could not load page');
                     const pageData = await response.json();
-                    const code = pageData.mermaidCode || '';
-                    let html = '<div class="page-content"><h1 class="page-title"><span>' + (page.icon || '📊') + '</span> ' + page.name + '</h1>';
-                    if (!code.trim()) {
-                        html += '<div class="empty">No Mermaid code in this page.</div>';
-                    } else {
+                    const codeType = pageData.codeType || 'mermaid';
+                    const code = (pageData.code ?? pageData.mermaidCode ?? '').trim();
+                    const icon = page.icon || '</>';
+                    let html = '<div class="page-content"><h1 class="page-title"><span>' + icon + '</span> ' + page.name + '</h1>';
+                    if (!code) {
+                        html += '<div class="empty">No code in this page.</div>';
+                    } else if (codeType === 'mermaid') {
                         html += '<div class="mermaid-container"><pre class="mermaid"></pre></div>';
+                    } else if (codeType === 'html') {
+                        html += '<iframe title="Code output" sandbox="allow-scripts" srcdoc="' + code.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '" style="width:100%;min-height:400px;border:1px solid #e5e7eb;border-radius:8px;"></iframe>';
+                    } else if (codeType === 'javascript') {
+                        const esc = code.replace(/<\\/script>/gi, '<\\\\/script>');
+                        const wrapped = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>' + esc + '</scr' + 'ipt></body></html>';
+                        html += '<iframe title="Code output" sandbox="allow-scripts" srcdoc="' + wrapped.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '" style="width:100%;min-height:400px;border:1px solid #e5e7eb;border-radius:8px;"></iframe>';
+                    } else {
+                        html += '<div class="empty">Unsupported code type.</div>';
                     }
                     html += '</div>';
                     document.getElementById('content').innerHTML = html;
                     document.getElementById('content').classList.remove('loading');
-                    if (code.trim()) {
+                    if (code && codeType === 'mermaid') {
                         const pre = document.querySelector('#content .mermaid');
                         if (pre) {
                             pre.textContent = code;
@@ -2006,11 +2016,18 @@
   const MERMAID_MAX_SCALE = 5;
   const MERMAID_ZOOM_STEP = 0.25;
 
+  const getCode = (p) => (p.code ?? p.mermaidCode ?? '').trim();
+  const getCodeType = (p) => p.codeType || 'mermaid';
+
   const MermaidPageComponent = ({ page, onUpdate, saveToHistory, showNotification, updateLocalName, syncRenameToDrive, toggleStar, activeNotebookId, activeTabId }) => {
-    const [showMermaidEdit, setShowMermaidEdit] = useState(false);
-    const [mermaidEditValue, setMermaidEditValue] = useState('');
-    const [editingMermaidName, setEditingMermaidName] = useState(false);
+    const codeType = getCodeType(page);
+    const code = getCode(page);
+    const [showCodeEdit, setShowCodeEdit] = useState(false);
+    const [codeEditValue, setCodeEditValue] = useState('');
+    const [codeEditType, setCodeEditType] = useState('mermaid');
+    const [editingName, setEditingName] = useState(false);
     const [mermaidError, setMermaidError] = useState(null);
+    const [iframeError, setIframeError] = useState(null);
     const diagramContainerRef = useRef(null);
     const mermaidInitRef = useRef(false);
     const viewportRef = useRef(null);
@@ -2038,24 +2055,29 @@
       }, 300);
     }, [transform, onUpdate]);
 
+    const isMermaidWithContent = codeType === 'mermaid' && code.length > 0;
     useEffect(() => {
-      if (!page.mermaidCode || mermaidError) return;
+      if (!isMermaidWithContent || mermaidError) return;
       persistViewport();
       return () => { if (persistViewportRef.current) clearTimeout(persistViewportRef.current); };
-    }, [transform, page.mermaidCode, mermaidError, persistViewport]);
+    }, [transform, isMermaidWithContent, mermaidError, persistViewport]);
 
-    const hasDiagram = !!(page.mermaidCode && !mermaidError);
+    const hasDiagram = isMermaidWithContent && !mermaidError;
 
-    const openMermaidEdit = () => {
-      setMermaidEditValue(page.mermaidCode ?? '');
-      setShowMermaidEdit(true);
+    const openCodeEdit = () => {
+      setCodeEditValue(page.code ?? page.mermaidCode ?? '');
+      setCodeEditType(getCodeType(page));
+      setShowCodeEdit(true);
+      setIframeError(null);
     };
 
-    const handleSaveMermaid = () => {
+    const handleSaveCode = () => {
       saveToHistory();
-      onUpdate({ mermaidCode: mermaidEditValue });
-      setShowMermaidEdit(false);
-      showNotification('Diagram updated', 'success');
+      const payload = { codeType: codeEditType, code: codeEditValue };
+      if (codeEditType === 'mermaid') payload.mermaidCode = codeEditValue;
+      onUpdate(payload);
+      setShowCodeEdit(false);
+      showNotification('Code updated', 'success');
     };
 
     const clampScale = (s) => Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, s));
@@ -2141,7 +2163,7 @@
     };
 
     useEffect(() => {
-      if (!page.mermaidCode || !diagramContainerRef.current) {
+      if (codeType !== 'mermaid' || !code || !diagramContainerRef.current) {
         setMermaidError(null);
         return;
       }
@@ -2153,7 +2175,7 @@
       el.innerHTML = '';
       const pre = document.createElement('pre');
       pre.className = 'mermaid';
-      pre.textContent = page.mermaidCode;
+      pre.textContent = code;
       el.appendChild(pre);
       if (!mermaidInitRef.current) {
         try {
@@ -2168,26 +2190,31 @@
       window.mermaid.run({ nodes: [pre] }).catch(() => {
         setMermaidError('Invalid Mermaid syntax');
       });
-    }, [page.id, page.mermaidCode]);
+    }, [page.id, codeType, code]);
+
+    const codePlaceholder = codeEditType === 'mermaid' ? 'Paste or type Mermaid code... e.g. graph TD; A --> B;' : codeEditType === 'javascript' ? 'Paste or type JavaScript... e.g. document.body.innerHTML = \'<p>Hello</p>\';' : 'Paste or type HTML... e.g. <h1>Hi</h1> or full mini-app.';
 
     return (
       <div className="w-full h-full flex flex-col bg-white dark:bg-gray-800">
         <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center gap-3 flex-shrink-0 flex-wrap">
-          <span className="text-2xl">{page.icon || '📊'}</span>
-          {editingMermaidName ? (
+          <span className="text-2xl">{page.icon || '</>'}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5">
+            {codeType === 'mermaid' ? 'Mermaid' : codeType === 'javascript' ? 'JavaScript' : 'HTML'}
+          </span>
+          {editingName ? (
             <input
               className="font-semibold text-gray-700 dark:text-gray-200 outline-none border-b-2 border-blue-400 bg-transparent w-40"
               value={page.name}
               onChange={(e) => updateLocalName('page', page.id, e.target.value)}
-              onBlur={() => { syncRenameToDrive('page', page.id); setEditingMermaidName(false); }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { syncRenameToDrive('page', page.id); setEditingMermaidName(false); } }}
+              onBlur={() => { syncRenameToDrive('page', page.id); setEditingName(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') { syncRenameToDrive('page', page.id); setEditingName(false); } }}
               onFocus={(e) => e.target.select()}
               autoFocus
             />
           ) : (
             <span
               className="font-semibold text-gray-700 dark:text-gray-200 cursor-pointer hover:text-blue-600 transition-colors w-40 truncate"
-              onClick={() => setEditingMermaidName(true)}
+              onClick={() => setEditingName(true)}
               title={page.name}
             >
               {page.name}
@@ -2199,6 +2226,13 @@
             title={page.starred ? 'Remove from favorites' : 'Add to favorites'}
           >
             <Star size={16} filled={page.starred} />
+          </button>
+          <button
+            onClick={openCodeEdit}
+            className="p-1.5 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+            title="Edit code"
+          >
+            <Edit3 size={16} />
           </button>
           {hasDiagram && (
             <div className="flex items-center gap-1 ml-2 border-l border-gray-200 dark:border-gray-600 pl-2" title="Zoom and pan supported. Moving individual nodes is not supported; use the Mermaid source or spacing options to reduce overlap.">
@@ -2230,15 +2264,18 @@
               </button>
             </div>
           )}
-          <button
-            onClick={openMermaidEdit}
-            className="p-1.5 rounded transition-colors text-gray-500 dark:text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 ml-auto"
-            title="Edit Mermaid diagram"
-          >
-            <Edit3 size={16} />
-          </button>
         </div>
-        {page.mermaidCode ? (
+        {!code ? (
+          <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 p-6">
+            <p className="text-sm mb-4">No code yet. Click the pencil to add code.</p>
+            <button
+              onClick={openCodeEdit}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Add code
+            </button>
+          </div>
+        ) : codeType === 'mermaid' ? (
           mermaidError ? (
             <div className="flex-1 min-h-0 overflow-auto p-6">
               <div className="text-sm text-red-600 dark:text-red-400">{mermaidError}</div>
@@ -2265,43 +2302,60 @@
               </div>
             </div>
           )
-        ) : (
-          <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 p-6">
-            <p className="text-sm mb-4">No diagram yet. Click the pencil to add Mermaid code.</p>
-            <button
-              onClick={openMermaidEdit}
-              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Add Mermaid code
-            </button>
-          </div>
-        )}
-        {showMermaidEdit && (
+        ) : (codeType === 'html' || codeType === 'javascript') ? (
+          iframeError ? (
+            <div className="flex-1 min-h-0 overflow-auto p-6">
+              <div className="text-sm text-red-600 dark:text-red-400">{iframeError}</div>
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
+              <iframe
+                title="Code output"
+                sandbox="allow-scripts"
+                srcDoc={codeType === 'javascript' ? '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>' + code.replace(/<\/script>/gi, '<\\/script>') + '</scr' + 'ipt></body></html>' : code}
+                className="flex-1 min-h-0 w-full border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
+                onError={() => setIframeError('Failed to load or run code.')}
+              />
+            </div>
+          )
+        ) : null}
+        {showCodeEdit && (
           <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full p-6 animate-fade-in">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
-                  <Edit3 size={20} /> Edit Mermaid diagram
+                  <Edit3 size={20} /> Edit code
                 </h3>
-                <button onClick={() => setShowMermaidEdit(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <button onClick={() => setShowCodeEdit(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                   <X size={20} className="dark:text-white" />
                 </button>
               </div>
+              <div className="flex gap-2 mb-3">
+                {['mermaid', 'javascript', 'html'].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setCodeEditType(t)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${codeEditType === t ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                  >
+                    {t === 'mermaid' ? 'Mermaid' : t === 'javascript' ? 'JavaScript' : 'HTML'}
+                  </button>
+                ))}
+              </div>
               <textarea
                 className="w-full h-64 p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono text-sm resize-y"
-                placeholder="Paste or type Mermaid code... e.g. graph TD; A --> B;"
-                value={mermaidEditValue}
-                onChange={(e) => setMermaidEditValue(e.target.value)}
+                placeholder={codePlaceholder}
+                value={codeEditValue}
+                onChange={(e) => setCodeEditValue(e.target.value)}
               />
               <div className="flex justify-end gap-3 mt-4">
                 <button
-                  onClick={() => setShowMermaidEdit(false)}
+                  onClick={() => setShowCodeEdit(false)}
                   className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSaveMermaid}
+                  onClick={handleSaveCode}
                   className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors"
                 >
                   Save
@@ -3453,13 +3507,15 @@
       };
     };
 
-    const createMermaidPage = (name = 'Mermaid Diagram') => {
+    const createCodePage = (name = 'Code Page') => {
       return {
         id: generateId(),
         name,
         createdAt: Date.now(),
         type: 'mermaid',
-        icon: '📊',
+        icon: '</>',
+        codeType: 'mermaid',
+        code: '',
         mermaidCode: ''
       };
     };
@@ -3688,10 +3744,10 @@
       }
     };
 
-    const addMermaidPage = async () => {
+    const addCodePage = async () => {
       if (!activeTabId) return;
       saveToHistory();
-      const newPage = createMermaidPage();
+      const newPage = createCodePage();
       const activeNotebook = data.notebooks.find(nb => nb.id === activeNotebookId);
       const activeTab = activeNotebook?.tabs.find(t => t.id === activeTabId);
       const newData = {
@@ -3715,7 +3771,7 @@
       setEditingTabId(null);
       setEditingNotebookId(null);
       setShouldFocusTitle(false);
-      showNotification('Mermaid page created', 'success');
+      showNotification('Code page created', 'success');
       setStructureVersion(v => v + 1);
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
         try {
@@ -3737,7 +3793,7 @@
             )
           }));
         } catch (error) {
-          console.error('Error syncing mermaid page to Drive:', error);
+          console.error('Error syncing code page to Drive:', error);
         }
       }
     };
@@ -5251,8 +5307,8 @@
                                       <button onClick={() => { addCanvasPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
                                           <span className="text-lg">🎨</span> Canvas
                                       </button>
-                                      <button onClick={() => { addMermaidPage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
-                                          <span className="text-lg">📊</span> Mermaid
+                                      <button onClick={() => { addCodePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm text-gray-800 dark:text-gray-200">
+                                          <span className="text-lg">&lt;/&gt;</span> Code Page
                                       </button>
                                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                                       <button onClick={() => { 

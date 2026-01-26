@@ -46,7 +46,7 @@ Note: index.html is self-contained (inline app + styles). app.js and styles.css 
 - **Google Drive File Embedding** - Embed Docs, Sheets, Slides via `/gdoc` command
 - **PDF Viewing** - Embed PDFs from URLs or Google Drive
 - **Canvas Pages** - Infinite canvas with freeform drawing, text containers, image pasting, pan/zoom with state persistence
-- **Mermaid Pages** - Dedicated page type for Mermaid diagrams: paste or edit Mermaid code, zoom/pan viewport (buttons, Alt+scroll, wheel pan, drag), fit/reset, viewport persistence per page
+- **Code Pages** - Mermaid, HTML, or JavaScript: code-type label in header, paste/edit code, zoom/pan for Mermaid; HTML/JS rendered in iframes that fill the page body
 - **Local Storage Fallback** - Works offline without Google sign-in
 
 ## Data Storage
@@ -117,6 +117,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.5.5** - Code Page: code-type label (Mermaid / HTML / JavaScript) in header; HTML/JS rendered iframes fill the page body.
 - **v2.5.4** - Mermaid page type: diagram pages with header (icon, name, star, edit), pencil-edit modal for Mermaid code, zoom/pan controls (ZoomIn/ZoomOut, scale %, Fit), Alt+wheel zoom-at-cursor, wheel pan (Shift+wheel horizontal), drag-to-pan, viewport persistence (`mermaidViewport`), Drive sync; offline viewer supports Mermaid.
 - **v2.5.3** - Performance and UX overhaul: active-page slice for faster typing, React.memo + stable callbacks on ContentBlock/BlockComponent, contentEditable fix (no dangerouslySetInnerHTML), useLayoutEffect for Ctrl+Enter focus, throttled block DnD, min-h-0 scroll fixes, condensed sidebar horizontal-scroll fix, tab/sidebar/empty-state polish. Pure helpers (getActiveContext, updatePageInData, getDropIndicatorClass). Single-file build: app + styles inlined into index.html.
 - **v2.5.2** - Fixed canvas coordinate system: corrected zoom-to-mouse calculation, viewport bounds calculation, and coordinate transformations to account for canvas-background offset; fixed live drawing path visibility during pen tool usage
