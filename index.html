@@ -102,7 +102,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.9";
+  const APP_VERSION = "2.6.0";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -3248,9 +3248,14 @@ html.dark .canvas-grid {
         if (isLoadingAuth) return;
 
         if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-          // Load from Google Drive
+          // Load from Google Drive structure
           try {
-            const manifest = await GoogleAPI.getAppDataFile();
+            // Get or create root folder
+            const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
+            setDriveRootFolderId(rootFolderId);
+            
+            // Try to load from Drive structure
+            const driveData = await GoogleAPI.loadFromDriveStructure(rootFolderId);
             if (manifest) {
               // Load data from manifest
               if (manifest.data) {
@@ -3277,13 +3282,8 @@ html.dark .canvas-grid {
               if (saved) {
                 try {
                   const parsed = JSON.parse(saved);
-                  // Migrate to Drive
-                  await GoogleAPI.createAppDataFile({
-                    data: parsed,
-                    settings: JSON.parse(localStorage.getItem('note-app-settings-v1') || '{}'),
-                    version: APP_VERSION,
-                    lastModified: Date.now()
-                  });
+                  // Data will be migrated to Drive structure when user saves notebooks/tabs/pages
+                  // No need to create appDataFolder manifest files anymore
                   setData(parsed);
                   if (parsed.notebooks.length > 0) {
                     const firstNb = parsed.notebooks[0];
@@ -3295,19 +3295,18 @@ html.dark .canvas-grid {
                        if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
                     }
                   }
-                  showNotification('Data migrated to Google Drive', 'success');
+                  showNotification('Data loaded from local storage. Changes will sync to Drive when saved.', 'info');
                 } catch (e) {
                   console.error('Migration error:', e);
                   // Fall through to INITIAL_DATA
+                  setData(INITIAL_DATA);
+                  setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
+                  setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
+                  setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
                 }
               } else {
-                // Create initial manifest
-                await GoogleAPI.createAppDataFile({
-                  data: INITIAL_DATA,
-                  settings: DEFAULT_SETTINGS,
-                  version: APP_VERSION,
-                  lastModified: Date.now()
-                });
+                // Initialize with default data
+                // Drive structure will be created when user saves notebooks/tabs/pages
                 setData(INITIAL_DATA);
                 setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
                 setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
@@ -3380,38 +3379,15 @@ html.dark .canvas-grid {
         // Debounce saves (500ms)
         debouncedSave.current = setTimeout(async () => {
             if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-                // Save to Google Drive
-                try {
-                    await GoogleAPI.updateAppDataFile({
-                        data: data,
-                        settings: settings,
-                        version: APP_VERSION,
-                        lastModified: Date.now()
-                    });
-                } catch (error) {
-                    console.error('Failed to save to Drive:', error);
-                    if (error.message.includes('Authentication')) {
-                        showNotification('Authentication expired. Please sign in again.', 'error');
-                    } else {
-                        showNotification('Save failed. Retrying...', 'error');
-                        // Retry once after a delay
-                        setTimeout(async () => {
-                            try {
-                                await GoogleAPI.updateAppDataFile({
-                                    data: data,
-                                    settings: settings,
-                                    version: APP_VERSION,
-                                    lastModified: Date.now()
-                                });
-                            } catch (retryError) {
-                                console.error('Retry save failed:', retryError);
-                            }
-                        }, 2000);
-                    }
-                }
+                // Data is saved directly to Drive folder structure via individual save functions
+                // (saveNotebookFolder, saveTabFolder, savePageFile) when data changes.
+                // No need to save a monolithic manifest file anymore.
+                // Just save settings to localStorage as fallback
+                localStorage.setItem('note-app-settings-v1', JSON.stringify(settings));
             } else {
                 // Fallback to localStorage
                 localStorage.setItem('note-app-data-v1', JSON.stringify(data));
+                localStorage.setItem('note-app-settings-v1', JSON.stringify(settings));
             }
         }, 500);
 
@@ -6710,6 +6686,42 @@ html.dark .canvas-grid {
                           </div>
                           <p className="text-xs text-gray-400 mt-1">Controls how many columns you can create when dragging blocks side-by-side</p>
                       </div>
+
+                      {/* Cleanup Drive */}
+                      {isAuthenticated && (
+                          <div className="mb-6">
+                              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                  <span className="flex items-center gap-2"><Trash2 size={16} /> Clean Up Drive</span>
+                              </label>
+                              <p className="text-xs text-gray-400 mb-3">Remove old temporary files from your Drive's app data folder</p>
+                              <button 
+                                  onClick={async () => {
+                                      if (!confirm('This will delete old manifest files from your Drive app data folder. This action cannot be undone. Continue?')) {
+                                          return;
+                                      }
+                                      
+                                      try {
+                                          showNotification('Cleaning up Drive...', 'info');
+                                          const result = await GoogleAPI.cleanupAppDataFolder();
+                                          if (result.errors && result.errors.length > 0) {
+                                              showNotification(`Cleanup completed with ${result.errors.length} error(s). ${result.deleted} file(s) deleted.`, 'error');
+                                          } else if (result.deleted > 0) {
+                                              showNotification(`Successfully deleted ${result.deleted} file(s) from Drive`, 'success');
+                                          } else {
+                                              showNotification('No files found to clean up', 'info');
+                                          }
+                                      } catch (error) {
+                                          console.error('Cleanup error:', error);
+                                          showNotification(`Cleanup failed: ${error.message || 'Unknown error'}`, 'error');
+                                      }
+                                  }}
+                                  className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
+                              >
+                                  <Trash2 size={16} />
+                                  Clean Up Temporary Files
+                              </button>
+                          </div>
+                      )}
 
                       <div className="border-t dark:border-gray-700 pt-4">
                           <button 

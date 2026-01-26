@@ -1,0 +1,5 @@
+# Exclude config.js (contains API keys)
+config.js
+
+# Exclude debug logs
+.cursor/debug.log

@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.5.9";
+  const APP_VERSION = "2.6.0";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -3150,42 +3150,36 @@
         if (isLoadingAuth) return;
 
         if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-          // Load from Google Drive
+          // Load from Google Drive structure
           try {
-            const manifest = await GoogleAPI.getAppDataFile();
-            if (manifest) {
-              // Load data from manifest
-              if (manifest.data) {
-                setData(manifest.data);
-                if (manifest.data.notebooks.length > 0) {
-                  const firstNb = manifest.data.notebooks[0];
-                  setActiveNotebookId(firstNb.id);
-                  const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-                  setActiveTabId(tabId);
-                  if(tabId) {
-                     const tab = firstNb.tabs.find(t => t.id === tabId);
-                     if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
-                  }
+            // Get or create root folder
+            const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
+            setDriveRootFolderId(rootFolderId);
+            
+            // Try to load from Drive structure
+            const driveData = await GoogleAPI.loadFromDriveStructure(rootFolderId);
+            
+            if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
+              // Load data from Drive structure
+              setData(driveData);
+              if (driveData.notebooks.length > 0) {
+                const firstNb = driveData.notebooks[0];
+                setActiveNotebookId(firstNb.id);
+                const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+                setActiveTabId(tabId);
+                if(tabId) {
+                   const tab = firstNb.tabs.find(t => t.id === tabId);
+                   if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
                 }
               }
-              
-              // Load settings from manifest
-              if (manifest.settings) {
-                setSettings({ ...DEFAULT_SETTINGS, ...manifest.settings });
-              }
             } else {
-              // No manifest found, check for localStorage migration
+              // No structure found, check for localStorage migration
               const saved = localStorage.getItem('note-app-data-v1');
               if (saved) {
                 try {
                   const parsed = JSON.parse(saved);
-                  // Migrate to Drive
-                  await GoogleAPI.createAppDataFile({
-                    data: parsed,
-                    settings: JSON.parse(localStorage.getItem('note-app-settings-v1') || '{}'),
-                    version: APP_VERSION,
-                    lastModified: Date.now()
-                  });
+                  // TODO: Migrate from localStorage to Drive structure
+                  // For now, just use localStorage data
                   setData(parsed);
                   if (parsed.notebooks.length > 0) {
                     const firstNb = parsed.notebooks[0];
@@ -3197,19 +3191,17 @@
                        if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
                     }
                   }
-                  showNotification('Data migrated to Google Drive', 'success');
+                  showNotification('Loaded from local storage. Structure migration pending.', 'info');
                 } catch (e) {
                   console.error('Migration error:', e);
                   // Fall through to INITIAL_DATA
+                  setData(INITIAL_DATA);
+                  setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
+                  setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
+                  setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
                 }
               } else {
-                // Create initial manifest
-                await GoogleAPI.createAppDataFile({
-                  data: INITIAL_DATA,
-                  settings: DEFAULT_SETTINGS,
-                  version: APP_VERSION,
-                  lastModified: Date.now()
-                });
+                // Create initial structure
                 setData(INITIAL_DATA);
                 setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
                 setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
@@ -3269,59 +3261,15 @@
     }, [isAuthenticated, isLoadingAuth]);
 
     // Debounced save to Drive or localStorage
-    const debouncedSave = useRef(null);
-    
+    // Note: Individual file/folder saves are handled in structure sync and content sync useEffects
+    // This effect only handles localStorage fallback for non-authenticated users
     useEffect(() => {
         if (isLoadingAuth) return;
 
-        // Clear existing timeout
-        if (debouncedSave.current) {
-            clearTimeout(debouncedSave.current);
+        if (!isAuthenticated || typeof GoogleAPI === 'undefined') {
+            // Fallback to localStorage
+            localStorage.setItem('note-app-data-v1', JSON.stringify(data));
         }
-
-        // Debounce saves (500ms)
-        debouncedSave.current = setTimeout(async () => {
-            if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
-                // Save to Google Drive
-                try {
-                    await GoogleAPI.updateAppDataFile({
-                        data: data,
-                        settings: settings,
-                        version: APP_VERSION,
-                        lastModified: Date.now()
-                    });
-                } catch (error) {
-                    console.error('Failed to save to Drive:', error);
-                    if (error.message.includes('Authentication')) {
-                        showNotification('Authentication expired. Please sign in again.', 'error');
-                    } else {
-                        showNotification('Save failed. Retrying...', 'error');
-                        // Retry once after a delay
-                        setTimeout(async () => {
-                            try {
-                                await GoogleAPI.updateAppDataFile({
-                                    data: data,
-                                    settings: settings,
-                                    version: APP_VERSION,
-                                    lastModified: Date.now()
-                                });
-                            } catch (retryError) {
-                                console.error('Retry save failed:', retryError);
-                            }
-                        }, 2000);
-                    }
-                }
-            } else {
-                // Fallback to localStorage
-                localStorage.setItem('note-app-data-v1', JSON.stringify(data));
-            }
-        }, 500);
-
-        return () => {
-            if (debouncedSave.current) {
-                clearTimeout(debouncedSave.current);
-            }
-        };
     }, [data, settings, isAuthenticated, isLoadingAuth]);
     
     // Save settings and apply theme
@@ -3426,52 +3374,55 @@
                 setIsSyncing(true);
                 const driveIdUpdates = {}; // Only track drive IDs, not content
 
-                // Sync each notebook (create folders only if missing)
+                // Sync each notebook using idempotent save functions
                 for (const notebook of data.notebooks) {
-                    if (!notebook.driveFolderId) {
-                        try {
-                            const folderId = await GoogleAPI.getOrCreateFolder(notebook.name, driveRootFolderId);
-                            driveIdUpdates[notebook.id] = { driveFolderId: folderId };
-                        } catch (error) {
-                            console.error(`Error creating folder for notebook ${notebook.name}:`, error);
+                    try {
+                        const folderId = await GoogleAPI.saveNotebookFolder(notebook, driveRootFolderId);
+                        if (folderId !== notebook.driveFolderId) {
+                            if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = {};
+                            driveIdUpdates[notebook.id].driveFolderId = folderId;
                         }
+                    } catch (error) {
+                        console.error(`Error saving notebook folder ${notebook.name}:`, error);
                     }
 
-                    const notebookFolderId = notebook.driveFolderId || driveIdUpdates[notebook.id]?.driveFolderId;
+                    const notebookFolderId = driveIdUpdates[notebook.id]?.driveFolderId || notebook.driveFolderId;
                     if (!notebookFolderId) continue;
 
                     // Sync tabs within this notebook
                     for (const tab of notebook.tabs) {
-                        if (!tab.driveFolderId) {
-                            try {
-                                const folderId = await GoogleAPI.getOrCreateFolder(tab.name, notebookFolderId);
+                        try {
+                            const folderId = await GoogleAPI.saveTabFolder(tab, notebookFolderId);
+                            if (folderId !== tab.driveFolderId) {
                                 if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
                                 if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
                                 driveIdUpdates[notebook.id].tabs[tab.id] = { driveFolderId: folderId };
-                            } catch (error) {
-                                console.error(`Error creating folder for tab ${tab.name}:`, error);
                             }
+                        } catch (error) {
+                            console.error(`Error saving tab folder ${tab.name}:`, error);
                         }
 
-                        const tabFolderId = tab.driveFolderId || driveIdUpdates[notebook.id]?.tabs?.[tab.id]?.driveFolderId;
+                        const tabFolderId = driveIdUpdates[notebook.id]?.tabs?.[tab.id]?.driveFolderId || tab.driveFolderId;
                         if (!tabFolderId) continue;
 
-                        // Create page files (but don't update content here - that's content sync)
+                        // Save page files (idempotent, so safe to call even if file exists)
                         for (const page of tab.pages) {
                             const pageType = page.type || 'block';
                             const isGooglePage = ['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType);
                             
-                            // For block pages: create file only if it doesn't exist
-                            if (!isGooglePage && !page.driveFileId) {
+                            // For block pages: save file (idempotent)
+                            if (!isGooglePage) {
                                 try {
-                                    const fileId = await GoogleAPI.syncPageToDrive(page, tabFolderId);
-                                    if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
-                                    if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
-                                    if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
-                                    if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
-                                    driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { driveFileId: fileId };
+                                    const fileId = await GoogleAPI.savePageFile(page, tabFolderId);
+                                    if (fileId !== page.driveFileId) {
+                                        if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
+                                        if (!driveIdUpdates[notebook.id].tabs) driveIdUpdates[notebook.id].tabs = {};
+                                        if (!driveIdUpdates[notebook.id].tabs[tab.id]) driveIdUpdates[notebook.id].tabs[tab.id] = { pages: {} };
+                                        if (!driveIdUpdates[notebook.id].tabs[tab.id].pages) driveIdUpdates[notebook.id].tabs[tab.id].pages = {};
+                                        driveIdUpdates[notebook.id].tabs[tab.id].pages[page.id] = { driveFileId: fileId };
+                                    }
                                 } catch (error) {
-                                    console.error(`Error creating file for page ${page.name}:`, error);
+                                    console.error(`Error saving page file ${page.name}:`, error);
                                 }
                             }
                             
@@ -3550,12 +3501,27 @@
                     });
                 }
                 
-                // Update manifest.json and index.html (only on structure sync)
+                // Update index file with current sort order
                 try {
-                    await GoogleAPI.updateManifest(data, driveRootFolderId, APP_VERSION);
+                    const indexData = {
+                        notebooks: data.notebooks.map(nb => nb.id),
+                        tabs: {},
+                        pages: {}
+                    };
+                    
+                    for (const notebook of data.notebooks) {
+                        indexData.tabs[notebook.id] = notebook.tabs.map(tab => tab.id);
+                        for (const tab of notebook.tabs) {
+                            indexData.pages[tab.id] = tab.pages.map(page => page.id);
+                        }
+                    }
+                    
+                    await GoogleAPI.saveIndexFile(driveRootFolderId, indexData);
+                    
+                    // Also update index.html for offline viewer
                     await GoogleAPI.uploadIndexHtml(generateOfflineViewerHtml(), driveRootFolderId);
                 } catch (error) {
-                    console.error('Error updating manifest/index.html:', error);
+                    console.error('Error updating index file/index.html:', error);
                 }
                 
                 setLastSyncTime(Date.now());
@@ -3597,9 +3563,10 @@
                         const isGooglePage = ['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType);
                         
                         // Only sync block pages that already have a driveFileId
+                        // savePageFile is idempotent, so safe to call multiple times
                         if (!isGooglePage && page.driveFileId) {
                             try {
-                                await GoogleAPI.syncPageToDrive(page, tabFolderId);
+                                await GoogleAPI.savePageFile(page, tabFolderId);
                             } catch (error) {
                                 console.error(`Error updating page content ${page.name}:`, error);
                             }
@@ -4192,7 +4159,7 @@
               const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
               const notebookFolderId = await GoogleAPI.syncNotebookToDrive(newNb, rootFolderId);
               const tabFolderId = await GoogleAPI.syncTabToDrive(newTab, notebookFolderId);
-              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, tabFolderId);
+              const pageFileId = await GoogleAPI.savePageFile(newPage, tabFolderId);
               
               // Update local data with Drive IDs
               setData(prev => ({
@@ -4245,7 +4212,7 @@
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeNotebook?.driveFolderId) {
           try {
               const tabFolderId = await GoogleAPI.syncTabToDrive(newTab, activeNotebook.driveFolderId);
-              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, tabFolderId);
+              const pageFileId = await GoogleAPI.savePageFile(newPage, tabFolderId);
               
               // Update local data with Drive IDs
               setData(prev => ({
@@ -4306,7 +4273,7 @@
       // Sync to Drive if authenticated
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
           try {
-              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+              const pageFileId = await GoogleAPI.savePageFile(newPage, activeTab.driveFolderId);
               
               // Update local data with Drive ID
               setData(prev => ({
@@ -4366,7 +4333,7 @@
       // Sync to Drive if authenticated
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
           try {
-              const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+              const pageFileId = await GoogleAPI.savePageFile(newPage, activeTab.driveFolderId);
               
               // Update local data with Drive ID
               setData(prev => ({
@@ -4422,7 +4389,7 @@
       setStructureVersion(v => v + 1);
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
         try {
-          const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+          const pageFileId = await GoogleAPI.savePageFile(newPage, activeTab.driveFolderId);
           setData(prev => ({
             ...prev,
             notebooks: prev.notebooks.map(nb =>
@@ -4476,7 +4443,7 @@
       setStructureVersion(v => v + 1);
       if (isAuthenticated && typeof GoogleAPI !== 'undefined' && activeTab?.driveFolderId) {
         try {
-          const pageFileId = await GoogleAPI.syncPageToDrive(newPage, activeTab.driveFolderId);
+          const pageFileId = await GoogleAPI.savePageFile(newPage, activeTab.driveFolderId);
           setData(prev => ({
             ...prev,
             notebooks: prev.notebooks.map(nb =>
@@ -6611,6 +6578,34 @@
                               <span className="w-8 text-center font-bold text-lg dark:text-white">{settings.maxColumns}</span>
                           </div>
                           <p className="text-xs text-gray-400 mt-1">Controls how many columns you can create when dragging blocks side-by-side</p>
+                      </div>
+
+                      {/* Migration Button - Temporary */}
+                      <div className="border-t dark:border-gray-700 pt-4 mb-4">
+                          <button 
+                              onClick={async () => {
+                                  if (!isAuthenticated || typeof GoogleAPI === 'undefined') {
+                                      showNotification('Please sign in to Google Drive first', 'error');
+                                      return;
+                                  }
+                                  if (!confirm('This will migrate your data to the new architecture. Continue?')) {
+                                      return;
+                                  }
+                                  try {
+                                      setShowSettings(false);
+                                      showNotification('Migration started. Check console for progress.', 'info');
+                                      const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
+                                      const result = await GoogleAPI.migrateStrataData(rootFolderId);
+                                      showNotification(`Migration complete! ${result.filesArchived} files archived.`, 'success');
+                                  } catch (error) {
+                                      console.error('Migration error:', error);
+                                      showNotification('Migration failed. Check console for details.', 'error');
+                                  }
+                              }}
+                              className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600 transition-colors"
+                          >
+                              Run Migration
+                          </button>
                       </div>
 
                       <div className="border-t dark:border-gray-700 pt-4">

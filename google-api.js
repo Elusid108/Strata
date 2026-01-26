@@ -12,6 +12,10 @@ const STORAGE_KEY_TOKEN = 'strata_access_token';
 const STORAGE_KEY_USER = 'strata_user_info';
 const STORAGE_KEY_EXPIRY = 'strata_token_expiry';
 
+// Mutex for getOrCreateRootFolder to prevent race conditions
+let rootFolderCreationLock = null;
+let cachedRootFolderId = null;
+
 // Initialize Google API client
 const loadGapi = () => {
     return new Promise((resolve, reject) => {
@@ -252,30 +256,37 @@ const ensureAuthenticated = async () => {
 
 // ===== Drive API Functions =====
 
-// Get appDataFolder file (strata_manifest.json)
-const getAppDataFile = async () => {
+// Sanitize filename to be filesystem-safe
+const sanitizeFileName = (name) => {
+    if (!name) return 'Untitled';
+    // Remove/replace characters that are invalid in filenames
+    return name
+        .replace(/[<>:"/\\|?*]/g, '-')  // Replace invalid chars with dash
+        .replace(/\s+/g, ' ')            // Normalize whitespace
+        .replace(/^\.+/, '')             // Remove leading dots
+        .replace(/\.+$/, '')             // Remove trailing dots
+        .trim()
+        .substring(0, 200);              // Limit length
+};
+
+// Get file properties (custom metadata)
+const getFileProperties = async (fileId) => {
     try {
         await ensureAuthenticated();
-
-        const response = await gapi.client.drive.files.list({
-            q: "name='strata_manifest.json' and 'appDataFolder' in parents",
-            spaces: 'appDataFolder',
-            fields: 'files(id, name, modifiedTime)',
-            orderBy: 'modifiedTime desc'
+        
+        const response = await gapi.client.drive.files.get({
+            fileId: fileId,
+            fields: 'properties'
         });
-
-        if (response.result.files && response.result.files.length > 0) {
-            // Always use the most recently modified file (first after orderBy desc)
-            const fileId = response.result.files[0].id;
-            const fileResponse = await gapi.client.drive.files.get({
-                fileId: fileId,
-                alt: 'media'
-            });
-            return JSON.parse(fileResponse.body);
-        }
-        return null;
+        
+        const props = response.result.properties || {};
+        return {
+            pageType: props.strata_pageType || null,
+            icon: props.strata_icon || null,
+            tabColor: props.strata_tabColor || null
+        };
     } catch (error) {
-        console.error('Error getting app data file:', error);
+        console.error('Error getting file properties:', error);
         if (error.status === 401) {
             await handleTokenExpiration();
             throw new Error('Authentication expired');
@@ -284,35 +295,265 @@ const getAppDataFile = async () => {
     }
 };
 
-// Create appDataFolder file
-const createAppDataFile = async (content) => {
+// Set file properties (custom metadata)
+const setFileProperties = async (fileId, properties) => {
     try {
         await ensureAuthenticated();
+        
+        const props = {};
+        if (properties.pageType !== undefined) props.strata_pageType = String(properties.pageType);
+        if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+        if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+        
+        await gapi.client.drive.files.update({
+            fileId: fileId,
+            resource: { properties: props },
+            fields: 'id, properties'
+        });
+        
+        return true;
+    } catch (error) {
+        console.error('Error setting file properties:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
 
-        const metadata = {
-            name: 'strata_manifest.json',
-            parents: ['appDataFolder']
+// Update file properties (metadata only, without affecting content)
+const updateFileProperties = async (fileId, properties) => {
+    try {
+        await ensureAuthenticated();
+        
+        // Convert properties object to Drive API format with strata_ prefix
+        const props = {};
+        for (const [key, value] of Object.entries(properties)) {
+            if (value !== undefined && value !== null) {
+                // Add strata_ prefix if not already present
+                const propKey = key.startsWith('strata_') ? key : `strata_${key}`;
+                props[propKey] = String(value);
+            }
+        }
+        
+        const response = await gapi.client.drive.files.update({
+            fileId: fileId,
+            resource: { properties: props },
+            fields: 'id, name, properties'
+        });
+        
+        return response.result;
+    } catch (error) {
+        console.error('Error updating file properties:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Get file with properties (metadata including custom properties)
+const getFileWithProperties = async (fileId) => {
+    try {
+        await ensureAuthenticated();
+        
+        const response = await gapi.client.drive.files.get({
+            fileId: fileId,
+            fields: 'id, name, mimeType, properties, parents, trashed'
+        });
+        
+        return response.result;
+    } catch (error) {
+        console.error('Error getting file with properties:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Get file metadata (ID, name, and properties only)
+const getFileMetadata = async (fileId) => {
+    try {
+        await ensureAuthenticated();
+        
+        const response = await gapi.client.drive.files.get({
+            fileId: fileId,
+            fields: 'id, name, properties'
+        });
+        
+        return {
+            id: response.result.id,
+            name: response.result.name,
+            properties: response.result.properties || {}
         };
+    } catch (error) {
+        console.error('Error getting file metadata:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
 
+// Create file with properties
+const createFileWithProperties = async (fileMetadata, properties = {}) => {
+    try {
+        await ensureAuthenticated();
+        
+        // Create a copy of fileMetadata to avoid mutating the original
+        const metadata = { ...fileMetadata };
+        
+        // Convert properties object to Drive API format with strata_ prefix
+        if (Object.keys(properties).length > 0) {
+            metadata.properties = {};
+            for (const [key, value] of Object.entries(properties)) {
+                if (value !== undefined && value !== null) {
+                    // Add strata_ prefix if not already present
+                    const propKey = key.startsWith('strata_') ? key : `strata_${key}`;
+                    metadata.properties[propKey] = String(value);
+                }
+            }
+        }
+        
+        const response = await gapi.client.drive.files.create({
+            resource: metadata,
+            fields: 'id, name, mimeType, properties, parents'
+        });
+        
+        return response.result;
+    } catch (error) {
+        console.error('Error creating file with properties:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Idempotent file save - checks fileId first, then name+parent, only creates as last resort
+const saveFileIdempotent = async (fileId, name, parentId, content, properties = {}) => {
+    try {
+        await ensureAuthenticated();
+        
+        const sanitizedName = sanitizeFileName(name);
+        
+        // Step 1: If fileId exists and is valid, update it
+        if (fileId) {
+            try {
+                const existing = await gapi.client.drive.files.get({
+                    fileId: fileId,
+                    fields: 'id, name, trashed'
+                });
+                if (!existing.result.trashed) {
+                    // File exists and is not trashed, update it
+                    const metadata = { name: sanitizedName };
+                    if (Object.keys(properties).length > 0) {
+                        const props = {};
+                        if (properties.pageType !== undefined) props.strata_pageType = String(properties.pageType);
+                        if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+                        if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+                        metadata.properties = props;
+                    }
+                    
+                    const form = new FormData();
+                    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                    if (content !== null && content !== undefined) {
+                        form.append('file', new Blob([JSON.stringify(content)], { type: 'application/json' }));
+                    }
+                    
+                    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
+                        method: 'PATCH',
+                        headers: { 'Authorization': `Bearer ${accessToken}` },
+                        body: form
+                    });
+                    
+                    return fileId;
+                }
+            } catch (e) {
+                // File doesn't exist or is trashed, continue to search by name
+            }
+        }
+        
+        // Step 2: Search for file with same name in parent
+        const searchQuery = parentId 
+            ? `name='${sanitizedName.replace(/'/g, "\\'")}' and '${parentId}' in parents and trashed=false`
+            : `name='${sanitizedName.replace(/'/g, "\\'")}' and 'root' in parents and trashed=false`;
+        
+        const searchResponse = await gapi.client.drive.files.list({
+            q: searchQuery,
+            fields: 'files(id, name)',
+            pageSize: 1
+        });
+        
+        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+            // Found existing file, update it
+            const existingFileId = searchResponse.result.files[0].id;
+            const metadata = { name: sanitizedName };
+            if (Object.keys(properties).length > 0) {
+                const props = {};
+                if (properties.pageType !== undefined) props.strata_pageType = String(properties.pageType);
+                if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+                if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+                metadata.properties = props;
+            }
+            
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            if (content !== null && content !== undefined) {
+                form.append('file', new Blob([JSON.stringify(content)], { type: 'application/json' }));
+            }
+            
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: form
+            });
+            
+            return existingFileId;
+        }
+        
+        // Step 3: Create new file as last resort
+        const metadata = {
+            name: sanitizedName,
+            mimeType: 'application/json'
+        };
+        if (parentId) {
+            metadata.parents = [parentId];
+        }
+        if (Object.keys(properties).length > 0) {
+            const props = {};
+            if (properties.pageType !== undefined) props.strata_pageType = String(properties.pageType);
+            if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+            if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+            metadata.properties = props;
+        }
+        
         const form = new FormData();
         form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', new Blob([JSON.stringify(content)], { type: 'application/json' }));
-
+        if (content !== null && content !== undefined) {
+            form.append('file', new Blob([JSON.stringify(content)], { type: 'application/json' }));
+        }
+        
         const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            },
+            headers: { 'Authorization': `Bearer ${accessToken}` },
             body: form
         });
-
+        
         if (!response.ok) {
             throw new Error(`Failed to create file: ${response.statusText}`);
         }
-
-        return await response.json();
+        
+        const result = await response.json();
+        return result.id;
     } catch (error) {
-        console.error('Error creating app data file:', error);
+        console.error('Error in saveFileIdempotent:', error);
         if (error.status === 401 || error.message.includes('Authentication')) {
             await handleTokenExpiration();
             throw new Error('Authentication expired');
@@ -321,51 +562,98 @@ const createAppDataFile = async (content) => {
     }
 };
 
-// Update appDataFolder file
-const updateAppDataFile = async (content) => {
+// Idempotent folder save - checks folderId first, then name+parent, only creates as last resort
+const saveFolderIdempotent = async (folderId, name, parentId, properties = {}) => {
     try {
         await ensureAuthenticated();
-
-        // First, get the file ID (use most recently modified if duplicates exist)
-        const listResponse = await gapi.client.drive.files.list({
-            q: "name='strata_manifest.json' and 'appDataFolder' in parents",
-            spaces: 'appDataFolder',
-            fields: 'files(id, modifiedTime)',
-            orderBy: 'modifiedTime desc'
-        });
-
-        if (!listResponse.result.files || listResponse.result.files.length === 0) {
-            return await createAppDataFile(content);
+        
+        const sanitizedName = sanitizeFileName(name);
+        
+        // Step 1: If folderId exists and is valid, update it
+        if (folderId) {
+            try {
+                const existing = await gapi.client.drive.files.get({
+                    fileId: folderId,
+                    fields: 'id, name, trashed'
+                });
+                if (!existing.result.trashed) {
+                    // Folder exists and is not trashed, update it
+                    const metadata = { name: sanitizedName };
+                    if (Object.keys(properties).length > 0) {
+                        const props = {};
+                        if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+                        if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+                        metadata.properties = props;
+                    }
+                    
+                    await gapi.client.drive.files.update({
+                        fileId: folderId,
+                        resource: metadata,
+                        fields: 'id, name'
+                    });
+                    
+                    return folderId;
+                }
+            } catch (e) {
+                // Folder doesn't exist or is trashed, continue to search by name
+            }
         }
-
-        // Always use the most recently modified file
-        const fileId = listResponse.result.files[0].id;
-
-        // Update the file
-        const metadata = {
-            name: 'strata_manifest.json'
+        
+        // Step 2: Search for folder with same name in parent
+        const searchQuery = parentId 
+            ? `name='${sanitizedName.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+            : `name='${sanitizedName.replace(/'/g, "\\'")}' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+        
+        const searchResponse = await gapi.client.drive.files.list({
+            q: searchQuery,
+            fields: 'files(id, name)',
+            pageSize: 1
+        });
+        
+        if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+            // Found existing folder, update it
+            const existingFolderId = searchResponse.result.files[0].id;
+            const metadata = { name: sanitizedName };
+            if (Object.keys(properties).length > 0) {
+                const props = {};
+                if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+                if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+                metadata.properties = props;
+            }
+            
+            await gapi.client.drive.files.update({
+                fileId: existingFolderId,
+                resource: metadata,
+                fields: 'id, name'
+            });
+            
+            return existingFolderId;
+        }
+        
+        // Step 3: Create new folder as last resort
+        const fileMetadata = {
+            name: sanitizedName,
+            mimeType: 'application/vnd.google-apps.folder'
         };
-
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', new Blob([JSON.stringify(content)], { type: 'application/json' }));
-
-        const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            },
-            body: form
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to update file: ${response.statusText}`);
+        if (parentId) {
+            fileMetadata.parents = [parentId];
         }
-
-        return await response.json();
+        if (Object.keys(properties).length > 0) {
+            const props = {};
+            if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+            if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+            fileMetadata.properties = props;
+        }
+        
+        const response = await gapi.client.drive.files.create({
+            resource: fileMetadata,
+            fields: 'id, name'
+        });
+        
+        return response.result.id;
     } catch (error) {
-        console.error('Error updating app data file:', error);
-        if (error.status === 401 || error.message.includes('Authentication')) {
+        console.error('Error in saveFolderIdempotent:', error);
+        if (error.status === 401) {
             await handleTokenExpiration();
             throw new Error('Authentication expired');
         }
@@ -522,115 +810,218 @@ const uploadFileToDrive = async (file, folderId, name) => {
     }
 };
 
-// Get or create root folder "Strata Notebooks" in visible My Drive (not appDataFolder)
-const getOrCreateRootFolder = async () => {
+// Get index file (strata_index.json) from root folder
+const getIndexFile = async (rootFolderId) => {
     try {
         await ensureAuthenticated();
-
-        // Search for existing folder in My Drive root (not appDataFolder)
+        
         const response = await gapi.client.drive.files.list({
-            q: "name='Strata Notebooks' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",
-            fields: 'files(id, name)',
+            q: `name='strata_index.json' and '${rootFolderId}' in parents and trashed=false`,
+            fields: 'files(id)',
             pageSize: 1
         });
-
+        
         if (response.result.files && response.result.files.length > 0) {
-            return response.result.files[0].id;
+            const fileId = response.result.files[0].id;
+            const fileResponse = await gapi.client.drive.files.get({
+                fileId: fileId,
+                alt: 'media'
+            });
+            return JSON.parse(fileResponse.body);
         }
-
-        // Create in My Drive root if doesn't exist
-        const fileMetadata = {
-            name: 'Strata Notebooks',
-            mimeType: 'application/vnd.google-apps.folder',
-            parents: ['root']  // Explicitly put in My Drive root
-        };
         
-        const createResponse = await gapi.client.drive.files.create({
-            resource: fileMetadata,
-            fields: 'id, name, webViewLink'
+        return null;
+    } catch (error) {
+        console.error('Error getting index file:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        // Return null if file doesn't exist (not an error)
+        if (error.status === 404) {
+            return null;
+        }
+        throw error;
+    }
+};
+
+// Save index file (strata_index.json) to root folder
+const saveIndexFile = async (rootFolderId, indexData) => {
+    try {
+        await ensureAuthenticated();
+        
+        const content = JSON.stringify(indexData, null, 2);
+        
+        // Use idempotent save - check for existing file first
+        const existing = await gapi.client.drive.files.list({
+            q: `name='strata_index.json' and '${rootFolderId}' in parents and trashed=false`,
+            fields: 'files(id)',
+            pageSize: 1
         });
-
-        return createResponse.result.id;
+        
+        if (existing.result.files && existing.result.files.length > 0) {
+            // Update existing file
+            const fileId = existing.result.files[0].id;
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify({ name: 'strata_index.json' })], { type: 'application/json' }));
+            form.append('file', new Blob([content], { type: 'application/json' }));
+            
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: form
+            });
+            
+            return fileId;
+        } else {
+            // Create new file
+            const metadata = {
+                name: 'strata_index.json',
+                parents: [rootFolderId],
+                mimeType: 'application/json'
+            };
+            
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', new Blob([content], { type: 'application/json' }));
+            
+            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: form
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to create index file: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            return result.id;
+        }
     } catch (error) {
-        console.error('Error getting/creating root folder:', error);
+        console.error('Error saving index file:', error);
+        if (error.status === 401 || error.message.includes('Authentication')) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
         throw error;
     }
 };
 
-// ===== Two-way Sync Functions =====
+// Get or create root folder "Strata Notebooks" in visible My Drive (not appDataFolder)
+const getOrCreateRootFolder = async () => {
+    // Return cached ID if available
+    if (cachedRootFolderId) {
+        return cachedRootFolderId;
+    }
 
-// Sync a notebook to Drive (create folder if needed)
-const syncNotebookToDrive = async (notebook, rootFolderId) => {
+    // Wait for any ongoing creation to complete
+    if (rootFolderCreationLock) {
+        await rootFolderCreationLock;
+        if (cachedRootFolderId) {
+            return cachedRootFolderId;
+        }
+    }
+
+    // Acquire lock for folder creation
+    rootFolderCreationLock = (async () => {
+        try {
+            await ensureAuthenticated();
+
+            // Search for existing folder in My Drive root (not appDataFolder)
+            const response = await gapi.client.drive.files.list({
+                q: "name='Strata Notebooks' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",
+                fields: 'files(id, name)',
+                pageSize: 1
+            });
+
+            if (response.result.files && response.result.files.length > 0) {
+                const folderId = response.result.files[0].id;
+                cachedRootFolderId = folderId;
+                return folderId;
+            }
+
+            // Create in My Drive root if doesn't exist
+            const fileMetadata = {
+                name: 'Strata Notebooks',
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: ['root']  // Explicitly put in My Drive root
+            };
+            
+            const createResponse = await gapi.client.drive.files.create({
+                resource: fileMetadata,
+                fields: 'id, name, webViewLink'
+            });
+
+            const newFolderId = createResponse.result.id;
+            cachedRootFolderId = newFolderId;
+            return newFolderId;
+        } catch (error) {
+            console.error('Error getting/creating root folder:', error);
+            throw error;
+        } finally {
+            rootFolderCreationLock = null;
+        }
+    })();
+
+    return await rootFolderCreationLock;
+};
+
+// ===== File-System-as-Database Save Functions =====
+
+// Save notebook folder (idempotent)
+const saveNotebookFolder = async (notebook, rootFolderId) => {
     try {
         await ensureAuthenticated();
         
-        const folderName = sanitizeFileName(notebook.name);
-        
-        // If notebook already has a Drive folder ID, check if it exists
-        if (notebook.driveFolderId) {
-            try {
-                const existing = await gapi.client.drive.files.get({
-                    fileId: notebook.driveFolderId,
-                    fields: 'id, name, trashed'
-                });
-                if (!existing.result.trashed) {
-                    // Folder exists, update name if needed
-                    if (existing.result.name !== folderName) {
-                        await updateDriveFolder(notebook.driveFolderId, folderName);
-                    }
-                    return notebook.driveFolderId;
-                }
-            } catch (e) {
-                // Folder doesn't exist, will create new one
-            }
+        const properties = {};
+        if (notebook.icon) {
+            properties.icon = notebook.icon;
         }
         
-        // Create new folder for notebook
-        const folder = await createDriveFolder(folderName, rootFolderId);
-        return folder.id;
+        const folderId = await saveFolderIdempotent(
+            notebook.driveFolderId,
+            notebook.name,
+            rootFolderId,
+            properties
+        );
+        
+        return folderId;
     } catch (error) {
-        console.error('Error syncing notebook to Drive:', error);
+        console.error('Error saving notebook folder:', error);
         throw error;
     }
 };
 
-// Sync a tab to Drive (create folder if needed)
-const syncTabToDrive = async (tab, notebookFolderId) => {
+// Save tab folder (idempotent)
+const saveTabFolder = async (tab, notebookFolderId) => {
     try {
         await ensureAuthenticated();
         
-        const folderName = sanitizeFileName(tab.name);
-        
-        // If tab already has a Drive folder ID, check if it exists
-        if (tab.driveFolderId) {
-            try {
-                const existing = await gapi.client.drive.files.get({
-                    fileId: tab.driveFolderId,
-                    fields: 'id, name, trashed'
-                });
-                if (!existing.result.trashed) {
-                    // Folder exists, update name if needed
-                    if (existing.result.name !== folderName) {
-                        await updateDriveFolder(tab.driveFolderId, folderName);
-                    }
-                    return tab.driveFolderId;
-                }
-            } catch (e) {
-                // Folder doesn't exist, will create new one
-            }
+        const properties = {};
+        if (tab.color) {
+            properties.tabColor = tab.color;
+        }
+        if (tab.icon) {
+            properties.icon = tab.icon;
         }
         
-        // Create new folder for tab
-        const folder = await createDriveFolder(folderName, notebookFolderId);
-        return folder.id;
+        const folderId = await saveFolderIdempotent(
+            tab.driveFolderId,
+            tab.name,
+            notebookFolderId,
+            properties
+        );
+        
+        return folderId;
     } catch (error) {
-        console.error('Error syncing tab to Drive:', error);
+        console.error('Error saving tab folder:', error);
         throw error;
     }
 };
 
-// Sync a page to Drive (create file if needed)
-const syncPageToDrive = async (page, tabFolderId) => {
+// Save page file (idempotent)
+const savePageFile = async (page, tabFolderId) => {
     try {
         await ensureAuthenticated();
         
@@ -646,61 +1037,764 @@ const syncPageToDrive = async (page, tabFolderId) => {
             createdAt: page.createdAt,
             modifiedAt: Date.now()
         };
+        
+        // Add page-type-specific content
         if (page.type === 'mermaid') {
             pageContent.mermaidCode = page.mermaidCode ?? '';
             if (page.mermaidViewport) pageContent.mermaidViewport = page.mermaidViewport;
         }
+        if (page.type === 'canvas') {
+            pageContent.canvasData = page.canvasData;
+        }
+        if (page.type === 'database') {
+            pageContent.databaseData = page.databaseData;
+        }
+        if (page.type === 'code') {
+            pageContent.codeContent = page.codeContent;
+            pageContent.codeType = page.codeType;
+        }
         
-        // If page already has a Drive file ID, update it
-        if (page.driveFileId) {
+        const properties = {
+            pageType: page.type || 'block'
+        };
+        if (page.icon) {
+            properties.icon = page.icon;
+        }
+        
+        const fileId = await saveFileIdempotent(
+            page.driveFileId,
+            fileName,
+            tabFolderId,
+            pageContent,
+            properties
+        );
+        
+        return fileId;
+    } catch (error) {
+        console.error('Error saving page file:', error);
+        throw error;
+    }
+};
+
+// Robust save page to Drive with Check-Update-Create logic
+const savePageToDrive = async (pageData) => {
+    try {
+        await ensureAuthenticated();
+        
+        // Sanitize filename
+        const fileName = sanitizeFileName(pageData.title) + '.json';
+        
+        // Prepare page content (JSON stringified)
+        const pageContent = JSON.stringify(pageData.content);
+        
+        // Prepare properties object
+        const properties = {};
+        if (pageData.strataType) properties.type = pageData.strataType;
+        if (pageData.icon) properties.icon = pageData.icon;
+        
+        // Build metadata with properties
+        const buildMetadata = (name, includeProps = true) => {
+            const metadata = { name };
+            if (includeProps && Object.keys(properties).length > 0) {
+                const props = {};
+                if (properties.type !== undefined) props.strata_pageType = String(properties.type);
+                if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+                metadata.properties = props;
+            }
+            return metadata;
+        };
+        
+        // Step 1: Check Internal ID - try to update if googleId exists
+        if (pageData.googleId) {
             try {
-                const existing = await gapi.client.drive.files.get({
-                    fileId: page.driveFileId,
-                    fields: 'id, name, trashed'
+                const metadata = buildMetadata(fileName);
+                const form = new FormData();
+                form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                form.append('file', new Blob([pageContent], { type: 'application/json' }));
+                
+                const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${pageData.googleId}?uploadType=multipart`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${accessToken}` },
+                    body: form
                 });
-                if (!existing.result.trashed) {
-                    // File exists, update it
-                    const form = new FormData();
-                    form.append('metadata', new Blob([JSON.stringify({ name: fileName })], { type: 'application/json' }));
-                    form.append('file', new Blob([JSON.stringify(pageContent)], { type: 'application/json' }));
+                
+                if (response.ok) {
+                    // Update successful, return the fileId
+                    return pageData.googleId;
+                } else if (response.status === 404) {
+                    // File was deleted externally, clear the ID and proceed to step 2
+                    console.warn(`File ${pageData.googleId} not found (404), clearing ID and searching by name`);
+                    pageData.googleId = null;
+                } else {
+                    // Other error, throw
+                    const errorText = await response.text();
+                    throw new Error(`Failed to update file: ${response.status} ${errorText}`);
+                }
+            } catch (error) {
+                // If it's a 404 from gapi client, handle it
+                if (error.status === 404 || error.message.includes('404')) {
+                    console.warn(`File ${pageData.googleId} not found (404), clearing ID and searching by name`);
+                    pageData.googleId = null;
+                } else if (error.status === 401) {
+                    await handleTokenExpiration();
+                    throw new Error('Authentication expired');
+                } else {
+                    // Re-throw other errors
+                    throw error;
+                }
+            }
+        }
+        
+        // Step 2: Check External Existence - search by name+parent
+        if (!pageData.googleId) {
+            try {
+                const sanitizedName = fileName.replace(/'/g, "\\'");
+                const query = `name='${sanitizedName}' and '${pageData.parentId}' in parents and trashed=false`;
+                
+                const searchResponse = await gapi.client.drive.files.list({
+                    q: query,
+                    fields: 'files(id, name)',
+                    pageSize: 1
+                });
+                
+                if (searchResponse.result.files && searchResponse.result.files.length > 0) {
+                    // Found existing file, update it
+                    const foundFileId = searchResponse.result.files[0].id;
+                    const metadata = buildMetadata(fileName);
                     
-                    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${page.driveFileId}?uploadType=multipart`, {
+                    const form = new FormData();
+                    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                    form.append('file', new Blob([pageContent], { type: 'application/json' }));
+                    
+                    const updateResponse = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${foundFileId}?uploadType=multipart`, {
                         method: 'PATCH',
                         headers: { 'Authorization': `Bearer ${accessToken}` },
                         body: form
                     });
-                    return page.driveFileId;
+                    
+                    if (!updateResponse.ok) {
+                        const errorText = await updateResponse.text();
+                        throw new Error(`Failed to update found file: ${updateResponse.status} ${errorText}`);
+                    }
+                    
+                    // Save the found fileId to pageData.googleId (mutate input object)
+                    pageData.googleId = foundFileId;
+                    return foundFileId;
                 }
-            } catch (e) {
-                // File doesn't exist, will create new one
+            } catch (error) {
+                console.error('Error searching for existing file:', error);
+                if (error.status === 401) {
+                    await handleTokenExpiration();
+                    throw new Error('Authentication expired');
+                }
+                // Continue to step 3 if search fails
             }
         }
         
-        // Create new file for page
-        const metadata = {
-            name: fileName,
-            parents: [tabFolderId],
-            mimeType: 'application/json'
-        };
+        // Step 3: Create new file (last resort)
+        const metadata = buildMetadata(fileName);
+        metadata.mimeType = 'application/json';
+        metadata.parents = [pageData.parentId];
         
         const form = new FormData();
         form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', new Blob([JSON.stringify(pageContent)], { type: 'application/json' }));
+        form.append('file', new Blob([pageContent], { type: 'application/json' }));
         
-        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        const createResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${accessToken}` },
             body: form
         });
         
-        if (!response.ok) {
-            throw new Error(`Failed to create page file: ${response.statusText}`);
+        if (!createResponse.ok) {
+            const errorText = await createResponse.text();
+            throw new Error(`Failed to create file: ${createResponse.status} ${errorText}`);
         }
         
-        const result = await response.json();
-        return result.id;
+        const result = await createResponse.json();
+        const newFileId = result.id;
+        
+        // Save the new fileId to pageData.googleId (mutate input object)
+        pageData.googleId = newFileId;
+        return newFileId;
+        
     } catch (error) {
-        console.error('Error syncing page to Drive:', error);
+        console.error('Error in savePageToDrive:', error);
+        if (error.status === 401 || error.message.includes('Authentication')) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Delete page from Drive (soft delete - move to trash)
+const deletePageFromDrive = async (fileId) => {
+    try {
+        await ensureAuthenticated();
+        
+        await gapi.client.drive.files.update({
+            fileId: fileId,
+            resource: { trashed: true },
+            fields: 'id'
+        });
+        
+        return true;
+    } catch (error) {
+        console.error('Error deleting page from Drive:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        if (error.status === 404) {
+            // File already deleted or not found
+            console.warn(`File ${fileId} not found (may already be deleted)`);
+            return true; // Consider it successful if already deleted
+        }
+        throw error;
+    }
+};
+
+// Get old manifest from appDataFolder or root folder (temporary migration helper)
+const getOldManifest = async () => {
+    try {
+        await ensureAuthenticated();
+        
+        // Try appDataFolder first
+        try {
+            const response = await gapi.client.drive.files.list({
+                q: "name='strata_manifest.json' and 'appDataFolder' in parents",
+                spaces: 'appDataFolder',
+                fields: 'files(id, name, modifiedTime)',
+                orderBy: 'modifiedTime desc'
+            });
+            if (response.result.files && response.result.files.length > 0) {
+                const fileId = response.result.files[0].id;
+                const fileResponse = await gapi.client.drive.files.get({
+                    fileId: fileId,
+                    alt: 'media'
+                });
+                return JSON.parse(fileResponse.body);
+            }
+        } catch (e) {
+            // Fall through to root folder check
+            console.log('Manifest not found in appDataFolder, checking root folder...');
+        }
+        
+        // Try root folder
+        const rootFolderId = await getOrCreateRootFolder();
+        const response = await gapi.client.drive.files.list({
+            q: `name='strata_manifest.json' and '${rootFolderId}' in parents and trashed=false`,
+            fields: 'files(id)',
+            pageSize: 1
+        });
+        if (response.result.files && response.result.files.length > 0) {
+            const fileId = response.result.files[0].id;
+            const fileResponse = await gapi.client.drive.files.get({
+                fileId: fileId,
+                alt: 'media'
+            });
+            return JSON.parse(fileResponse.body);
+        }
+        return null;
+    } catch (error) {
+        console.error('Error getting old manifest:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Clean up old manifest files from appDataFolder
+const cleanupAppDataFolder = async () => {
+    try {
+        await ensureAuthenticated();
+        
+        const deleted = [];
+        const errors = [];
+        
+        // List all files in appDataFolder
+        const response = await gapi.client.drive.files.list({
+            spaces: 'appDataFolder',
+            fields: 'files(id, name, mimeType)',
+            pageSize: 1000
+        });
+        
+        if (!response.result.files || response.result.files.length === 0) {
+            return { deleted: 0, errors: [] };
+        }
+        
+        // Delete files matching patterns: strata_manifest.json, strata_*.json, or any .json files
+        const filesToDelete = response.result.files.filter(file => {
+            const name = file.name.toLowerCase();
+            return name === 'strata_manifest.json' || 
+                   name.startsWith('strata_') && name.endsWith('.json') ||
+                   name.endsWith('.json');
+        });
+        
+        // Delete each file
+        for (const file of filesToDelete) {
+            try {
+                await gapi.client.drive.files.delete({
+                    fileId: file.id
+                });
+                deleted.push(file.name);
+                console.log(`Deleted: ${file.name}`);
+            } catch (error) {
+                console.error(`Error deleting ${file.name}:`, error);
+                errors.push({ file: file.name, error: error.message || String(error) });
+            }
+        }
+        
+        return {
+            deleted: deleted.length,
+            errors: errors,
+            deletedFiles: deleted
+        };
+    } catch (error) {
+        console.error('Error cleaning up appDataFolder:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Recursively get all files in a folder hierarchy
+const getAllFilesRecursive = async (folderId, allFiles = []) => {
+    try {
+        const items = await listFolderContents(folderId);
+        for (const item of items) {
+            if (item.mimeType === 'application/vnd.google-apps.folder') {
+                // Recursively process folders
+                await getAllFilesRecursive(item.id, allFiles);
+            } else {
+                // Add file to list
+                allFiles.push(item);
+            }
+        }
+        return allFiles;
+    } catch (error) {
+        console.error(`Error listing files in folder ${folderId}:`, error);
+        // Continue processing - return what we have so far
+        return allFiles;
+    }
+};
+
+// Sync sort order to strata_index.json
+const syncSortOrder = async (rootFolderId, orderData) => {
+    try {
+        await ensureAuthenticated();
+        
+        // Read existing index file
+        let existingIndex = await getIndexFile(rootFolderId);
+        
+        // If file doesn't exist, start with empty structure
+        if (!existingIndex) {
+            existingIndex = {
+                notebooks: [],
+                tabs: {},
+                pages: {},
+                folders: {}
+            };
+        }
+        
+        // Ensure folders key exists
+        if (!existingIndex.folders) {
+            existingIndex.folders = {};
+        }
+        
+        // Merge new order data into folders
+        for (const [folderId, fileIds] of Object.entries(orderData)) {
+            existingIndex.folders[folderId] = fileIds;
+        }
+        
+        // Save merged index back
+        const fileId = await saveIndexFile(rootFolderId, existingIndex);
+        return fileId;
+    } catch (error) {
+        console.error('Error syncing sort order:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Migrate data from old architecture to new File-System-as-Database architecture
+const migrateStrataData = async (rootFolderId) => {
+    try {
+        await ensureAuthenticated();
+        
+        console.log('Starting migration...');
+        
+        // Step 1: Load the Source of Truth
+        console.log('Step 1: Loading manifest...');
+        const manifest = await getOldManifest();
+        
+        if (!manifest || !manifest.data) {
+            throw new Error('No manifest found. Migration cannot proceed.');
+        }
+        
+        console.log(`Found manifest with ${manifest.data.notebooks?.length || 0} notebooks`);
+        
+        // Step 2: Create Backup Folder
+        console.log('Step 2: Creating archive folder...');
+        const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const archiveFolderName = `_Strata_Archived_Duplicates_${dateStr}`;
+        const archiveFolder = await createDriveFolder(archiveFolderName, rootFolderId);
+        const archiveFolderId = archiveFolder.id;
+        console.log(`Created archive folder: ${archiveFolderName} (${archiveFolderId})`);
+        
+        // Step 3: Iterate & Enrich
+        console.log('Step 3: Applying metadata to files...');
+        const keepList = new Set();
+        let notebooksUpdated = 0;
+        let tabsUpdated = 0;
+        let pagesUpdated = 0;
+        
+        // Add root folder and archive folder to keepList (don't archive these)
+        keepList.add(rootFolderId);
+        keepList.add(archiveFolderId);
+        
+        for (const notebook of manifest.data.notebooks || []) {
+            if (notebook.driveFolderId) {
+                keepList.add(notebook.driveFolderId);
+                try {
+                    // Apply notebook properties (icon)
+                    await updateFileProperties(notebook.driveFolderId, {
+                        icon: notebook.icon || '📓'
+                    });
+                    notebooksUpdated++;
+                    console.log(`Updated metadata for Notebook: ${notebook.name}`);
+                } catch (error) {
+                    console.error(`Error updating notebook ${notebook.name}:`, error);
+                }
+            }
+            
+            // For each tab
+            for (const tab of notebook.tabs || []) {
+                if (tab.driveFolderId) {
+                    keepList.add(tab.driveFolderId);
+                    try {
+                        // Apply tab properties (color, icon)
+                        await updateFileProperties(tab.driveFolderId, {
+                            icon: tab.icon || '📋',
+                            tabColor: tab.color || 'blue'
+                        });
+                        tabsUpdated++;
+                        console.log(`Updated metadata for Tab: ${tab.name}`);
+                    } catch (error) {
+                        console.error(`Error updating tab ${tab.name}:`, error);
+                    }
+                }
+                
+                // For each page
+                for (const page of tab.pages || []) {
+                    if (page.driveFileId) {
+                        keepList.add(page.driveFileId);
+                        try {
+                            // Apply page properties (type, icon)
+                            await updateFileProperties(page.driveFileId, {
+                                type: page.type || 'block',
+                                icon: page.icon || '📄'
+                            });
+                            pagesUpdated++;
+                            console.log(`Updated metadata for Page: ${page.name}`);
+                        } catch (error) {
+                            console.error(`Error updating page ${page.name}:`, error);
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`Metadata update complete: ${notebooksUpdated} notebooks, ${tabsUpdated} tabs, ${pagesUpdated} pages`);
+        
+        // Step 4: Cleanup (Soft Delete - Move to Archive)
+        console.log('Step 4: Finding and archiving orphan files...');
+        const allFiles = await getAllFilesRecursive(rootFolderId);
+        
+        // Filter out system files and files in keepList
+        const systemFiles = ['strata_index.json', 'manifest.json', 'index.html'];
+        const orphanFiles = allFiles.filter(file => 
+            !keepList.has(file.id) && 
+            !systemFiles.includes(file.name)
+        );
+        
+        console.log(`Found ${orphanFiles.length} orphan/duplicate files to archive`);
+        
+        let filesArchived = 0;
+        for (const file of orphanFiles) {
+            try {
+                // Get current parents
+                const fileInfo = await gapi.client.drive.files.get({
+                    fileId: file.id,
+                    fields: 'parents'
+                });
+                const oldParentId = fileInfo.result.parents?.[0];
+                
+                if (oldParentId) {
+                    await moveDriveItem(file.id, archiveFolderId, oldParentId);
+                    filesArchived++;
+                    console.log(`Archived orphan file: ${file.name} (${file.id})`);
+                }
+            } catch (error) {
+                console.error(`Error archiving file ${file.name}:`, error);
+            }
+        }
+        
+        console.log(`Migration complete! Archived ${filesArchived} files.`);
+        
+        return {
+            success: true,
+            notebooksUpdated,
+            tabsUpdated,
+            pagesUpdated,
+            filesArchived,
+            archiveFolderId
+        };
+    } catch (error) {
+        console.error('Error in migration:', error);
+        if (error.status === 401 || error.message.includes('Authentication')) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
+// Legacy sync functions (kept for backward compatibility during transition)
+const syncNotebookToDrive = saveNotebookFolder;
+const syncTabToDrive = saveTabFolder;
+const syncPageToDrive = savePageFile;
+
+// Load data structure from Drive folder hierarchy
+const loadFromDriveStructure = async (rootFolderId) => {
+    try {
+        await ensureAuthenticated();
+        
+        // Load index file for sort order
+        const indexData = await getIndexFile(rootFolderId);
+        const notebookOrder = indexData?.notebooks || [];
+        const tabOrder = indexData?.tabs || {};
+        const pageOrder = indexData?.pages || {};
+        
+        // List notebook folders in root
+        const notebooksResponse = await gapi.client.drive.files.list({
+            q: `'${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+            fields: 'files(id, name, properties)',
+            orderBy: 'name'
+        });
+        
+        const notebooks = [];
+        const notebookMap = new Map(); // Map folder ID to notebook object
+        
+        // Process notebooks
+        for (const folder of notebooksResponse.result.files || []) {
+            const props = folder.properties || {};
+            const notebook = {
+                id: `nb_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                name: folder.name,
+                icon: props.strata_icon || '📓',
+                driveFolderId: folder.id,
+                tabs: [],
+                activeTabId: null
+            };
+            
+            notebooks.push(notebook);
+            notebookMap.set(folder.id, notebook);
+        }
+        
+        // Apply sort order from index
+        if (notebookOrder.length > 0) {
+            const orderedNotebooks = [];
+            const unorderedNotebooks = [];
+            
+            for (const nbId of notebookOrder) {
+                const nb = notebooks.find(n => n.id === nbId);
+                if (nb) orderedNotebooks.push(nb);
+            }
+            
+            for (const nb of notebooks) {
+                if (!notebookOrder.includes(nb.id)) {
+                    unorderedNotebooks.push(nb);
+                }
+            }
+            
+            notebooks.length = 0;
+            notebooks.push(...orderedNotebooks, ...unorderedNotebooks);
+        }
+        
+        // Process tabs for each notebook
+        for (const notebook of notebooks) {
+            const tabsResponse = await gapi.client.drive.files.list({
+                q: `'${notebook.driveFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+                fields: 'files(id, name, properties)',
+                orderBy: 'name'
+            });
+            
+            const tabs = [];
+            const tabMap = new Map();
+            
+            for (const folder of tabsResponse.result.files || []) {
+                const props = folder.properties || {};
+                const tab = {
+                    id: `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    name: folder.name,
+                    icon: props.strata_icon || '📋',
+                    color: props.strata_tabColor || 'blue',
+                    driveFolderId: folder.id,
+                    pages: [],
+                    activePageId: null
+                };
+                
+                tabs.push(tab);
+                tabMap.set(folder.id, tab);
+            }
+            
+            // Apply sort order from index
+            const tabOrderForNotebook = tabOrder[notebook.id] || [];
+            if (tabOrderForNotebook.length > 0) {
+                const orderedTabs = [];
+                const unorderedTabs = [];
+                
+                for (const tabId of tabOrderForNotebook) {
+                    const tab = tabs.find(t => t.id === tabId);
+                    if (tab) orderedTabs.push(tab);
+                }
+                
+                for (const tab of tabs) {
+                    if (!tabOrderForNotebook.includes(tab.id)) {
+                        unorderedTabs.push(tab);
+                    }
+                }
+                
+                tabs.length = 0;
+                tabs.push(...orderedTabs, ...unorderedTabs);
+            }
+            
+            notebook.tabs = tabs;
+            if (tabs.length > 0) {
+                notebook.activeTabId = tabs[0].id;
+            }
+            
+            // Process pages for each tab
+            for (const tab of tabs) {
+                const pagesResponse = await gapi.client.drive.files.list({
+                    q: `'${tab.driveFolderId}' in parents and mimeType='application/json' and trashed=false`,
+                    fields: 'files(id, name, properties)',
+                    orderBy: 'name'
+                });
+                
+                const pages = [];
+                
+                for (const file of pagesResponse.result.files || []) {
+                    try {
+                        // Skip index file and manifest.json
+                        if (file.name === 'strata_index.json' || file.name === 'manifest.json' || file.name === 'index.html') {
+                            continue;
+                        }
+                        
+                        const props = file.properties || {};
+                        const pageType = props.strata_pageType || 'block';
+                        const icon = props.strata_icon || '📄';
+                        
+                        // Read file content
+                        const contentResponse = await gapi.client.drive.files.get({
+                            fileId: file.id,
+                            alt: 'media'
+                        });
+                        
+                        const pageContent = JSON.parse(contentResponse.body);
+                        
+                        // Reconstruct page object
+                        const page = {
+                            id: `page_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            name: pageContent.name || file.name.replace('.json', ''),
+                            type: pageType,
+                            icon: icon,
+                            driveFileId: file.id,
+                            rows: pageContent.content || pageContent.rows || [],
+                            content: pageContent.content || pageContent.rows || [],
+                            cover: pageContent.cover,
+                            googleFileId: pageContent.googleFileId,
+                            url: pageContent.url,
+                            createdAt: pageContent.createdAt || Date.now(),
+                            modifiedAt: pageContent.modifiedAt || Date.now()
+                        };
+                        
+                        // Add page-type-specific fields
+                        if (pageType === 'mermaid') {
+                            page.mermaidCode = pageContent.mermaidCode || '';
+                            page.mermaidViewport = pageContent.mermaidViewport;
+                        }
+                        if (pageType === 'canvas') {
+                            page.canvasData = pageContent.canvasData;
+                        }
+                        if (pageType === 'database') {
+                            page.databaseData = pageContent.databaseData;
+                        }
+                        if (pageType === 'code') {
+                            page.codeContent = pageContent.codeContent || '';
+                            page.codeType = pageContent.codeType || 'mermaid';
+                        }
+                        
+                        // Handle Google page links
+                        if (['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType)) {
+                            page.embedUrl = pageContent.embedUrl;
+                            page.webViewLink = pageContent.webViewLink;
+                            page.driveFileId = pageContent.driveFileId; // The linked Google file ID
+                        }
+                        
+                        pages.push(page);
+                    } catch (error) {
+                        console.error(`Error loading page ${file.name}:`, error);
+                        // Continue with other pages
+                    }
+                }
+                
+                // Apply sort order from index
+                const pageOrderForTab = pageOrder[tab.id] || [];
+                if (pageOrderForTab.length > 0) {
+                    const orderedPages = [];
+                    const unorderedPages = [];
+                    
+                    for (const pageId of pageOrderForTab) {
+                        const page = pages.find(p => p.id === pageId);
+                        if (page) orderedPages.push(page);
+                    }
+                    
+                    for (const page of pages) {
+                        if (!pageOrderForTab.includes(page.id)) {
+                            unorderedPages.push(page);
+                        }
+                    }
+                    
+                    pages.length = 0;
+                    pages.push(...orderedPages, ...unorderedPages);
+                }
+                
+                tab.pages = pages;
+                if (pages.length > 0) {
+                    tab.activePageId = pages[0].id;
+                }
+            }
+        }
+        
+        return {
+            notebooks: notebooks
+        };
+    } catch (error) {
+        console.error('Error loading from Drive structure:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
         throw error;
     }
 };
@@ -1303,6 +2397,38 @@ const listFolderContents = async (folderId) => {
     }
 };
 
+// List Strata files in a folder with properties field included
+const listStrataFiles = async (folderId, queryOptions = {}) => {
+    try {
+        await ensureAuthenticated();
+        
+        // Build base query
+        const baseQuery = `'${folderId}' in parents and trashed=false`;
+        const query = queryOptions.q ? `${baseQuery} and ${queryOptions.q}` : baseQuery;
+        
+        // Merge queryOptions into list request, ensuring properties field is included
+        const listRequest = {
+            q: query,
+            fields: 'nextPageToken, files(id, name, mimeType, parents, properties)',
+            ...queryOptions
+        };
+        
+        // Override fields to ensure properties is always included
+        listRequest.fields = 'nextPageToken, files(id, name, mimeType, parents, properties)';
+        
+        const response = await gapi.client.drive.files.list(listRequest);
+        
+        return response.result.files || [];
+    } catch (error) {
+        console.error('Error listing Strata files:', error);
+        if (error.status === 401) {
+            await handleTokenExpiration();
+            throw new Error('Authentication expired');
+        }
+        throw error;
+    }
+};
+
 // Get file content
 const getFileContent = async (fileId) => {
     try {
@@ -1438,19 +2564,6 @@ const showDrivePicker = (callback, mimeTypeFilter = null) => {
 };
 
 // ===== Portable Backup Functions =====
-
-// Sanitize filename to be filesystem-safe
-const sanitizeFileName = (name) => {
-    if (!name) return 'Untitled';
-    // Remove/replace characters that are invalid in filenames
-    return name
-        .replace(/[<>:"/\\|?*]/g, '-')  // Replace invalid chars with dash
-        .replace(/\s+/g, ' ')            // Normalize whitespace
-        .replace(/^\.+/, '')             // Remove leading dots
-        .replace(/\.+$/, '')             // Remove trailing dots
-        .trim()
-        .substring(0, 200);              // Limit length
-};
 
 // Create or update manifest.json in the root folder
 const updateManifest = async (data, rootFolderId, appVersion) => {
@@ -1604,9 +2717,6 @@ window.GoogleAPI = {
     checkAuthStatus,
     handleTokenExpiration,
     getUserInfo,
-    getAppDataFile,
-    createAppDataFile,
-    updateAppDataFile,
     createDriveFolder,
     getOrCreateFolder,
     updateDriveFolder,
@@ -1614,7 +2724,31 @@ window.GoogleAPI = {
     uploadFileToDrive,
     getOrCreateRootFolder,
     showDrivePicker,
-    // Two-way sync functions
+    // File properties functions
+    getFileProperties,
+    setFileProperties,
+    getFileWithProperties,
+    getFileMetadata,
+    updateFileProperties,
+    createFileWithProperties,
+    // Idempotent save functions
+    saveFileIdempotent,
+    saveFolderIdempotent,
+    // Index file functions
+    getIndexFile,
+    saveIndexFile,
+    // File-System-as-Database save functions
+    saveNotebookFolder,
+    saveTabFolder,
+    savePageFile,
+    savePageToDrive,
+    deletePageFromDrive,
+    syncSortOrder,
+    migrateStrataData,
+    getOldManifest,
+    // Load function
+    loadFromDriveStructure,
+    // Legacy sync functions (for backward compatibility)
     syncNotebookToDrive,
     syncTabToDrive,
     syncPageToDrive,
@@ -1626,6 +2760,7 @@ window.GoogleAPI = {
     getStartPageToken,
     getDriveChanges,
     listFolderContents,
+    listStrataFiles,
     getFileContent,
     fullSyncToDrive,
     createDriveShortcut,
@@ -1633,5 +2768,7 @@ window.GoogleAPI = {
     // Portable backup functions
     sanitizeFileName,
     updateManifest,
-    uploadIndexHtml
+    uploadIndexHtml,
+    // Cleanup function
+    cleanupAppDataFolder
 };
