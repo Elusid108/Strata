@@ -102,7 +102,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.0";
+  const APP_VERSION = "2.6.1";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -3256,28 +3256,19 @@ html.dark .canvas-grid {
             
             // Try to load from Drive structure
             const driveData = await GoogleAPI.loadFromDriveStructure(rootFolderId);
-            if (manifest) {
-              // Load data from manifest
-              if (manifest.data) {
-                setData(manifest.data);
-                if (manifest.data.notebooks.length > 0) {
-                  const firstNb = manifest.data.notebooks[0];
-                  setActiveNotebookId(firstNb.id);
-                  const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-                  setActiveTabId(tabId);
-                  if(tabId) {
-                     const tab = firstNb.tabs.find(t => t.id === tabId);
-                     if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
-                  }
-                }
-              }
-              
-              // Load settings from manifest
-              if (manifest.settings) {
-                setSettings({ ...DEFAULT_SETTINGS, ...manifest.settings });
+            if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
+              // Load data from Drive structure
+              setData(driveData);
+              const firstNb = driveData.notebooks[0];
+              setActiveNotebookId(firstNb.id);
+              const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+              setActiveTabId(tabId);
+              if(tabId) {
+                 const tab = firstNb.tabs.find(t => t.id === tabId);
+                 if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
               }
             } else {
-              // No manifest found, check for localStorage migration
+              // No Drive data found, check for localStorage migration
               const saved = localStorage.getItem('note-app-data-v1');
               if (saved) {
                 try {

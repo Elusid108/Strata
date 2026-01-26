@@ -117,6 +117,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.1** - Fixed Drive data loading: notebooks/tabs now correctly load from Drive after login instead of reverting to localStorage
 - **v2.6.0** - Fixed duplicate folder creation race condition, added Drive cleanup button in settings to remove old temporary files, fixed missing API function errors
 - **v2.5.9** - Reorganized page type menu: reordered menu items with improved grouping (Block Page, Canvas, Database, Code Page, Google Suite, Drive, PDF), updated UI layout for better organization
 - **v2.5.8** - Database page type: new table/database page type with customizable columns (text, number, boolean, select), add/remove rows and columns, vertical add-column bar on right edge (mouseover), row delete buttons on left side, full table editing interface
