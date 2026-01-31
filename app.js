@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.6";
+  const APP_VERSION = "2.6.7";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -4127,13 +4127,36 @@
             const activeTab = tabs.find(t => t.id === activeTabId);
             const pages = activeTab?.pages || [];
 
+            if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.altKey) {
+                e.preventDefault();
+                if (notebooks.length === 0) return;
+                const idx = notebooks.findIndex(nb => nb.id === activeNotebookId);
+                const nextIdx = e.key === 'ArrowUp' ? (idx <= 0 ? notebooks.length - 1 : idx - 1) : (idx >= notebooks.length - 1 ? 0 : idx + 1);
+                const targetNb = notebooks[nextIdx];
+                if (targetNb) selectNotebook(targetNb.id);
+                return;
+            }
+
             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (pages.length === 0) return;
                 const idx = pages.findIndex(p => p.id === activePageId);
                 const nextIdx = e.key === 'ArrowUp' ? (idx <= 0 ? pages.length - 1 : idx - 1) : (idx >= pages.length - 1 ? 0 : idx + 1);
-                selectPage(pages[nextIdx].id);
-                shouldFocusPageRef.current = true;
+                const targetPage = pages[nextIdx];
+                if (targetPage) {
+                    selectPage(targetPage.id);
+                    shouldFocusPageRef.current = true;
+                }
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (tabs.length === 0) return;
+                const idx = tabs.findIndex(t => t.id === activeTabId);
+                const nextIdx = e.key === 'ArrowLeft' ? (idx <= 0 ? tabs.length - 1 : idx - 1) : (idx >= tabs.length - 1 ? 0 : idx + 1);
+                const targetTab = tabs[nextIdx];
+                if (targetTab) selectTab(targetTab.id);
                 return;
             }
 

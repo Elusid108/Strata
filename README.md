@@ -125,6 +125,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.7** - Keyboard nav: Ctrl+Left/Right cycle tabs, Ctrl+Alt+Up/Down cycle notebooks
 - **v2.6.6** - Keyboard nav fixes: Ctrl+Up/Down no longer skips two pages (page-div handler ignores Ctrl), fixed crash when navigating to last page (rowsForEditor Array.isArray guard)
 - **v2.6.5** - Keyboard navigation: Ctrl+Up/Down to cycle pages (replacing Ctrl+Tab), Ctrl+1-0 for tabs, Ctrl+Alt+1-0 for notebooks
 - **v2.6.4** - Drive load and cache: parallelized page content fetches in loadFromDriveStructure (batched, 10 concurrent), same-device cache for Drive data (sessionStorage + localStorage, 24h), embed container min-height to fix Google "page too small" error, driveLinkFileId preserved for Google pages
