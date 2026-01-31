@@ -44,7 +44,7 @@ Note: index.html is self-contained (inline app + styles). app.js and styles.css 
 - **Favorites** - Star pages for quick access
 - **Tab color cycling** - New tabs automatically cycle through colors
 - **Responsive tabs** - Fish-eye hover effect when tabs overflow
-- **Google Drive Integration** - Cloud storage with automatic sync
+- **Google Drive Integration** - Cloud storage with automatic sync, parallel page loading, and same-device cache for fast return visits
 - **Google Drive File Embedding** - Embed Docs, Sheets, Slides via `/gdoc` command
 - **PDF Viewing** - Embed PDFs from URLs or Google Drive
 - **Canvas Pages** - Infinite canvas with freeform drawing, text containers, image pasting, pan/zoom with state persistence
@@ -101,6 +101,10 @@ Strata supports **Google Drive** as the primary storage backend, with localStora
    - Deploy to GitHub Pages or your static host
    - Users will sign in with Google on first use
 
+### Same-Device Cache (v2.6.4+)
+
+When signed in, Strata caches loaded notebook data to `sessionStorage` and `localStorage` (24h). Returning to the app on the same device shows cached data immediately, then refreshes from Drive in the background.
+
 ### Fallback Mode
 
 If not signed in, app uses `localStorage`:
@@ -121,6 +125,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.4** - Drive load and cache: parallelized page content fetches in loadFromDriveStructure (batched, 10 concurrent), same-device cache for Drive data (sessionStorage + localStorage, 24h), embed container min-height to fix Google "page too small" error, driveLinkFileId preserved for Google pages
 - **v2.6.3** - Map block enhancements: address field persistence with reverse geocoding, improved geocoding flexibility (partial addresses, multiple result handling), automatic marker placement on geocode, real-time zoom and lock updates, fixed `/map` command timing issue, fixed map block dragging on canvas pages
 - **v2.6.2** - UID-based structure system: implemented new StrataStructure format with flat nodes map and UID-based file operations. Added migration script, reconciler for remote-first boot, and updated offline viewer to use strata_structure.json
 - **v2.6.1** - Fixed Drive data loading: notebooks/tabs now correctly load from Drive after login instead of reverting to localStorage

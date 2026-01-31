@@ -1897,7 +1897,9 @@ const loadFromDriveStructure = async (rootFolderId) => {
                 notebook.activeTabId = tabs[0].id;
             }
             
-            // Process pages for each tab
+            // Process pages for each tab - collect page files first, then fetch content in parallel
+            const pagesToFetch = [];
+            
             for (const tab of tabs) {
                 const pagesResponse = await gapi.client.drive.files.list({
                     q: `'${tab.driveFolderId}' in parents and mimeType='application/json' and trashed=false`,
@@ -1908,94 +1910,114 @@ const loadFromDriveStructure = async (rootFolderId) => {
                 const pages = [];
                 
                 for (const file of pagesResponse.result.files || []) {
-                    try {
-                        // Skip index file and manifest.json
-                        if (file.name === 'strata_index.json' || file.name === 'manifest.json' || file.name === 'index.html') {
-                            continue;
-                        }
-                        
-                        const props = file.properties || {};
-                        const pageType = props.strata_pageType || 'block';
-                        const icon = props.strata_icon || '📄';
-                        
-                        // Read file content
-                        const contentResponse = await gapi.client.drive.files.get({
-                            fileId: file.id,
-                            alt: 'media'
-                        });
-                        
-                        const pageContent = JSON.parse(contentResponse.body);
-                        
-                        // Reconstruct page object
-                        const page = {
-                            id: `page_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            name: pageContent.name || file.name.replace('.json', ''),
-                            type: pageType,
-                            icon: icon,
-                            driveFileId: file.id,
-                            rows: pageContent.content || pageContent.rows || [],
-                            content: pageContent.content || pageContent.rows || [],
-                            cover: pageContent.cover,
-                            googleFileId: pageContent.googleFileId,
-                            url: pageContent.url,
-                            createdAt: pageContent.createdAt || Date.now(),
-                            modifiedAt: pageContent.modifiedAt || Date.now()
-                        };
-                        
-                        // Add page-type-specific fields
-                        if (pageType === 'mermaid') {
-                            page.mermaidCode = pageContent.mermaidCode || '';
-                            page.mermaidViewport = pageContent.mermaidViewport;
-                        }
-                        if (pageType === 'canvas') {
-                            page.canvasData = pageContent.canvasData;
-                        }
-                        if (pageType === 'database') {
-                            page.databaseData = pageContent.databaseData;
-                        }
-                        if (pageType === 'code') {
-                            page.codeContent = pageContent.codeContent || '';
-                            page.codeType = pageContent.codeType || 'mermaid';
-                        }
-                        
-                        // Handle Google page links
-                        if (['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType)) {
-                            page.embedUrl = pageContent.embedUrl;
-                            page.webViewLink = pageContent.webViewLink;
-                            page.driveFileId = pageContent.driveFileId; // The linked Google file ID
-                        }
-                        
-                        pages.push(page);
-                    } catch (error) {
-                        console.error(`Error loading page ${file.name}:`, error);
-                        // Continue with other pages
-                    }
-                }
-                
-                // Apply sort order from index
-                const pageOrderForTab = pageOrder[tab.id] || [];
-                if (pageOrderForTab.length > 0) {
-                    const orderedPages = [];
-                    const unorderedPages = [];
-                    
-                    for (const pageId of pageOrderForTab) {
-                        const page = pages.find(p => p.id === pageId);
-                        if (page) orderedPages.push(page);
+                    // Skip system files
+                    if (file.name === 'strata_index.json' || file.name === 'manifest.json' || file.name === 'index.html') {
+                        continue;
                     }
                     
-                    for (const page of pages) {
-                        if (!pageOrderForTab.includes(page.id)) {
-                            unorderedPages.push(page);
-                        }
-                    }
+                    const props = file.properties || {};
+                    const pageType = props.strata_pageType || 'block';
+                    const icon = props.strata_icon || '📄';
                     
-                    pages.length = 0;
-                    pages.push(...orderedPages, ...unorderedPages);
+                    const page = {
+                        id: `page_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        name: file.name.replace('.json', ''),
+                        type: pageType,
+                        icon: icon,
+                        driveFileId: file.id,
+                        rows: [],
+                        content: [],
+                        cover: null,
+                        googleFileId: null,
+                        url: null,
+                        createdAt: Date.now(),
+                        modifiedAt: Date.now()
+                    };
+                    
+                    pages.push(page);
+                    pagesToFetch.push({ fileId: file.id, fileName: file.name, tab, page });
                 }
                 
                 tab.pages = pages;
                 if (pages.length > 0) {
                     tab.activePageId = pages[0].id;
+                }
+            }
+            
+            // Fetch all page contents in parallel batches (concurrency limit: 10)
+            const BATCH_SIZE = 10;
+            for (let i = 0; i < pagesToFetch.length; i += BATCH_SIZE) {
+                const batch = pagesToFetch.slice(i, i + BATCH_SIZE);
+                const results = await Promise.all(batch.map(async ({ fileId, fileName, page }) => {
+                    try {
+                        const contentResponse = await gapi.client.drive.files.get({
+                            fileId,
+                            alt: 'media'
+                        });
+                        return { page, pageContent: JSON.parse(contentResponse.body) };
+                    } catch (error) {
+                        console.error(`Error loading page ${fileName}:`, error);
+                        return { page, pageContent: null };
+                    }
+                }));
+                
+                for (const { page, pageContent } of results) {
+                    if (!pageContent) continue;
+                    
+                    const pageType = page.type;
+                    page.name = pageContent.name || page.name;
+                    page.rows = pageContent.content || pageContent.rows || [];
+                    page.content = pageContent.content || pageContent.rows || [];
+                    page.cover = pageContent.cover;
+                    page.googleFileId = pageContent.googleFileId;
+                    page.url = pageContent.url;
+                    page.createdAt = pageContent.createdAt || page.createdAt;
+                    page.modifiedAt = pageContent.modifiedAt || page.modifiedAt;
+                    
+                    if (pageType === 'mermaid') {
+                        page.mermaidCode = pageContent.mermaidCode || '';
+                        page.mermaidViewport = pageContent.mermaidViewport;
+                    }
+                    if (pageType === 'canvas') {
+                        page.canvasData = pageContent.canvasData;
+                    }
+                    if (pageType === 'database') {
+                        page.databaseData = pageContent.databaseData;
+                    }
+                    if (pageType === 'code') {
+                        page.codeContent = pageContent.codeContent || '';
+                        page.codeType = pageContent.codeType || 'mermaid';
+                    }
+                    
+                    if (['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType)) {
+                        page.embedUrl = pageContent.embedUrl;
+                        page.webViewLink = pageContent.webViewLink;
+                        page.driveLinkFileId = page.driveFileId; // page JSON file
+                        page.driveFileId = pageContent.driveFileId || page.driveFileId; // linked Google file
+                    }
+                }
+            }
+            
+            // Apply sort order from index for each tab
+            for (const tab of tabs) {
+                const pageOrderForTab = pageOrder[tab.id] || [];
+                const pages = tab.pages;
+                if (pageOrderForTab.length > 0 && pages.length > 0) {
+                    const orderedPages = [];
+                    const unorderedPages = [];
+                    for (const pageId of pageOrderForTab) {
+                        const page = pages.find(p => p.id === pageId);
+                        if (page) orderedPages.push(page);
+                    }
+                    for (const page of pages) {
+                        if (!pageOrderForTab.includes(page.id)) {
+                            unorderedPages.push(page);
+                        }
+                    }
+                    tab.pages = [...orderedPages, ...unorderedPages];
+                    if (tab.pages.length > 0) {
+                        tab.activePageId = tab.pages[0].id;
+                    }
                 }
             }
         }

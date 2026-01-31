@@ -104,7 +104,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.3";
+  const APP_VERSION = "2.6.4";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -3913,24 +3913,68 @@ html.dark .canvas-grid {
         if (isAuthenticated && typeof GoogleAPI !== 'undefined') {
           // Load from Google Drive structure
           try {
+            const cacheKey = userEmail ? `strata-cache-${userEmail}` : null;
+            const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours for localStorage
+
+            const applyDataAndActives = (driveData) => {
+              if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
+                setData(driveData);
+                const firstNb = driveData.notebooks[0];
+                setActiveNotebookId(firstNb.id);
+                const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+                setActiveTabId(tabId);
+                if (tabId) {
+                  const tab = firstNb.tabs.find(t => t.id === tabId);
+                  if (tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+                }
+              }
+            };
+
+            // Check cache for instant load (same-device return)
+            let usedCache = false;
+            if (cacheKey) {
+              const sessionCached = sessionStorage.getItem(cacheKey);
+              const localCached = localStorage.getItem(cacheKey);
+              let cached = null;
+              if (sessionCached) {
+                try {
+                  cached = JSON.parse(sessionCached);
+                } catch (e) { /* ignore */ }
+              }
+              if (!cached && localCached) {
+                try {
+                  const parsed = JSON.parse(localCached);
+                  const age = Date.now() - (parsed.timestamp || 0);
+                  if (age < CACHE_MAX_AGE_MS && parsed.data) {
+                    cached = parsed;
+                  }
+                } catch (e) { /* ignore */ }
+              }
+              if (cached && cached.data) {
+                applyDataAndActives(cached.data);
+                usedCache = true;
+              }
+            }
+
             // Get or create root folder
             const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
             setDriveRootFolderId(rootFolderId);
             
-            // Try to load from Drive structure
+            // Load from Drive (background refresh if we used cache)
             const driveData = await GoogleAPI.loadFromDriveStructure(rootFolderId);
             if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
-              // Load data from Drive structure
-              setData(driveData);
-              const firstNb = driveData.notebooks[0];
-              setActiveNotebookId(firstNb.id);
-              const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-              setActiveTabId(tabId);
-              if(tabId) {
-                 const tab = firstNb.tabs.find(t => t.id === tabId);
-                 if(tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+              applyDataAndActives(driveData);
+              if (cacheKey) {
+                const cacheEntry = { data: driveData, timestamp: Date.now() };
+                try {
+                  sessionStorage.setItem(cacheKey, JSON.stringify(cacheEntry));
+                  localStorage.setItem(cacheKey, JSON.stringify(cacheEntry));
+                } catch (e) { /* quota or disabled */ }
               }
-            } else {
+              if (usedCache) {
+                showNotification('Notebook updated from Drive', 'success');
+              }
+            } else if (!usedCache) {
               // No Drive data found, check for localStorage migration
               const saved = localStorage.getItem('note-app-data-v1');
               if (saved) {
@@ -6321,8 +6365,8 @@ html.dark .canvas-grid {
           )}
 
           <div className="flex-1 min-h-0 flex overflow-hidden">
-              {/* Main content area with cached iframes */}
-              <div className={`flex-1 min-h-0 relative ${(activePage?.embedUrl || activePage?.type === 'canvas' || activePage?.type === 'mermaid' || activePage?.type === 'database') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
+              {/* Main content area with cached iframes - min-h-[400px] prevents Google "page too small" error */}
+              <div className={`flex-1 min-h-0 relative min-h-[400px] ${(activePage?.embedUrl || activePage?.type === 'canvas' || activePage?.type === 'mermaid' || activePage?.type === 'database') ? 'p-0 overflow-hidden' : 'p-8 overflow-y-auto'} transition-colors duration-300 ${activeTab ? getPageBgClass(activeTab.color) : 'bg-gray-50'}`}>
                   {/* Session-wide cached iframes - persist across all tab/notebook switches */}
                   {data.notebooks.flatMap(nb => nb.tabs.flatMap(t => t.pages))
                       .filter(p => {
@@ -6375,8 +6419,8 @@ html.dark .canvas-grid {
                             onUpdate={(updates) => updatePageMeta(updates)}
                           />
                       ) : activePage.embedUrl ? (
-                          // Embedded page (Google Docs/Sheets/Slides, Web, PDF)
-                          <div className="w-full h-full flex flex-col">
+                          // Embedded page (Google Docs/Sheets/Slides, Web, PDF) - min-h ensures iframe has room
+                          <div className="w-full h-full min-h-[400px] flex flex-col">
                               <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3">
                                   <span className="text-2xl">{activePage.icon}</span>
                                   {editingEmbedName ? (
