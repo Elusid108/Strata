@@ -125,6 +125,8 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.6** - Keyboard nav fixes: Ctrl+Up/Down no longer skips two pages (page-div handler ignores Ctrl), fixed crash when navigating to last page (rowsForEditor Array.isArray guard)
+- **v2.6.5** - Keyboard navigation: Ctrl+Up/Down to cycle pages (replacing Ctrl+Tab), Ctrl+1-0 for tabs, Ctrl+Alt+1-0 for notebooks
 - **v2.6.4** - Drive load and cache: parallelized page content fetches in loadFromDriveStructure (batched, 10 concurrent), same-device cache for Drive data (sessionStorage + localStorage, 24h), embed container min-height to fix Google "page too small" error, driveLinkFileId preserved for Google pages
 - **v2.6.3** - Map block enhancements: address field persistence with reverse geocoding, improved geocoding flexibility (partial addresses, multiple result handling), automatic marker placement on geocode, real-time zoom and lock updates, fixed `/map` command timing issue, fixed map block dragging on canvas pages
 - **v2.6.2** - UID-based structure system: implemented new StrataStructure format with flat nodes map and UID-based file operations. Added migration script, reconciler for remote-first boot, and updated offline viewer to use strata_structure.json

@@ -104,7 +104,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.4";
+  const APP_VERSION = "2.6.6";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -4522,7 +4522,7 @@ html.dark .canvas-grid {
     };
 
     const { notebook: activeNotebook, tab: activeTab, page: activePage } = getActiveContext(data, activeNotebookId, activeTabId, activePageId);
-    const rowsForEditor = activePageRows ?? activePage?.rows ?? [];
+    const rowsForEditor = Array.isArray(activePageRows ?? activePage?.rows) ? (activePageRows ?? activePage?.rows) : [];
 
     const flushActivePageToData = (rows) => {
         if (!activePageId || !activeTabId || !activeNotebookId) return;
@@ -4555,7 +4555,8 @@ html.dark .canvas-grid {
 
     useEffect(() => {
         const ctx = getActiveContext(data, activeNotebookId, activeTabId, activePageId);
-        setActivePageRows(ctx.page ? (ctx.page.rows ?? []) : null);
+        const rows = ctx.page?.rows;
+        setActivePageRows(ctx.page ? (Array.isArray(rows) ? rows : []) : null);
     }, [data, activePageId, activeTabId, activeNotebookId]);
 
     useEffect(() => {
@@ -4796,6 +4797,52 @@ html.dark .canvas-grid {
             )
         }));
     };
+
+    useEffect(() => {
+        const handleNavKeyDown = (e) => {
+            const mod = e.ctrlKey || e.metaKey;
+            if (!mod) return;
+
+            const el = document.activeElement;
+            const tag = el?.tagName?.toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return;
+            if (notebookIconPicker || tabIconPicker || activeTabMenu || showSettings || showDocImport || showSheetImport || showSlideImport) return;
+
+            const notebooks = data?.notebooks || [];
+            const activeNb = notebooks.find(nb => nb.id === activeNotebookId);
+            const tabs = activeNb?.tabs || [];
+            const activeTab = tabs.find(t => t.id === activeTabId);
+            const pages = activeTab?.pages || [];
+
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (pages.length === 0) return;
+                const idx = pages.findIndex(p => p.id === activePageId);
+                const nextIdx = e.key === 'ArrowUp' ? (idx <= 0 ? pages.length - 1 : idx - 1) : (idx >= pages.length - 1 ? 0 : idx + 1);
+                const targetPage = pages[nextIdx];
+                if (targetPage) {
+                    selectPage(targetPage.id);
+                    shouldFocusPageRef.current = true;
+                }
+                return;
+            }
+
+            if (mod && e.altKey && /^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+                const n = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
+                if (n >= 0 && n < notebooks.length) selectNotebook(notebooks[n].id);
+                return;
+            }
+
+            if (mod && !e.altKey && /^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+                const n = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
+                if (n >= 0 && n < tabs.length) selectTab(tabs[n].id);
+            }
+        };
+        window.addEventListener('keydown', handleNavKeyDown);
+        return () => window.removeEventListener('keydown', handleNavKeyDown);
+    }, [data, activeNotebookId, activeTabId, activePageId, selectPage, selectTab, selectNotebook, notebookIconPicker, tabIconPicker, activeTabMenu, showSettings, showDocImport, showSheetImport, showSlideImport]);
 
     const toggleStar = (pageId, notebookId, tabId) => {
         setData(prev => ({
@@ -6130,9 +6177,11 @@ html.dark .canvas-grid {
 
     const handlePageKeyDown = (e, pageId, index, pages) => {
         if (e.key === 'ArrowDown') {
+            if (e.ctrlKey || e.metaKey) return;
             e.preventDefault();
             if (index < pages.length - 1) { selectPage(pages[index + 1].id); shouldFocusPageRef.current = true; }
         } else if (e.key === 'ArrowUp') {
+            if (e.ctrlKey || e.metaKey) return;
             e.preventDefault();
             if (index > 0) { selectPage(pages[index - 1].id); shouldFocusPageRef.current = true; }
         } else if (e.key === 'Delete') {
