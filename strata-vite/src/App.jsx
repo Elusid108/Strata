@@ -223,7 +223,7 @@ function App() {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
+    <div className="h-screen bg-gray-100 dark:bg-gray-900 flex flex-col">
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <h1 className="text-xl font-bold text-gray-800 dark:text-white text-center">
@@ -301,9 +301,6 @@ function App() {
 
         {activeTab === 'canvas' && (
           <div className="h-full">
-            {/* #region agent log */}
-            {fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:canvas-tab',message:'Rendering canvas tab',data:{canvasPageId:canvasPage?.id,hasCanvasData:!!canvasPage?.canvasData,containers:canvasPage?.canvasData?.containers?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{})}
-            {/* #endregion */}
             <CanvasPageComponent
               page={canvasPage}
               onUpdate={handleCanvasUpdate}

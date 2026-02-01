@@ -15,10 +15,8 @@ ol ol ol { list-style-type: lower-roman !important; margin-left: 1.5rem !importa
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* Base styles */
-/* Note: overflow: hidden removed to allow page scrolling for Section E test page */
-/* The full app (Section H) will use container-based scrolling with fixed sidebars */
-body { margin: 0; padding: 0; background-color: #f9fafb; min-height: 100vh; }
-#root { min-height: 100%; }
+html, body { margin: 0; padding: 0; height: 100%; background-color: #f9fafb; }
+#root { height: 100%; }
 
 /* Focus styles for page navigation */
 .page-item:focus { outline: 2px solid #3b82f6; outline-offset: -2px; background-color: #f3f4f6; }

@@ -10,11 +10,9 @@ import {
 } from '../icons';
 import { SlashMenu, ToolbarBtn, UniversalContainer } from '../ui';
 import MapConfigPopup from './MapConfigPopup';
+import MapBlock from './MapBlock';
 
 const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CanvasPageComponent.jsx:15',message:'Component render - page prop',data:{pageId:page?.id,hasCanvasData:!!page?.canvasData,containerCount:page?.canvasData?.containers?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
   const canvasData = page.canvasData || { containers: [], paths: [], pageTitle: page.name || 'Untitled Page', transform: { x: 32, y: 32, scale: 1 } };
   
   // State
@@ -45,25 +43,17 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
 
   // Initialize from page data when page changes
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CanvasPageComponent.jsx:useEffect-init',message:'useEffect init running',data:{pageId:page?.id,existingContainers:page?.canvasData?.containers?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     const data = page.canvasData || {};
     setContainers(data.containers || []);
     setPaths(data.paths || []);
-    // Sync pageTitle with page.name - use page.name as source of truth if canvasData.pageTitle doesn't exist
     const title = data.pageTitle || page.name || 'Untitled Page';
     setPageTitle(title);
-    // Load transform state or default to center view
     const fallbackTransform = { x: 32, y: 32, scale: 1 };
     const newTransform = data.transform || fallbackTransform;
     setTransform(newTransform);
     
     // Initialize with default container if no data exists
     if (!data.containers || data.containers.length === 0) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CanvasPageComponent.jsx:useEffect-init-default',message:'Creating default container',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       setContainers([
         { id: generateId(), type: 'text', x: 100, y: 180, content: '<div>Click anywhere to start typing...</div>', width: null }
       ]);
@@ -98,7 +88,7 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
         pageTitle,
         transform 
       },
-      name: pageTitle // Sync page name with canvas title
+      name: pageTitle
     });
   }, [containers, paths, pageTitle, transform]);
 
@@ -341,6 +331,9 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
   const getViewportBounds = () => {
     if (!canvasRef.current) return null;
     const rect = canvasRef.current.getBoundingClientRect();
+    // Don't cull if canvas hasn't been sized yet
+    if (rect.width === 0 || rect.height === 0) return null;
+    
     const currentTransform = transformRef.current;
     const canvasOffset = 25000;
     const padding = 200; // Render slightly outside viewport for smooth scrolling
@@ -357,9 +350,6 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
 
   const isElementVisible = (x, y, width, height) => {
     const viewport = getViewportBounds();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CanvasPageComponent.jsx:isElementVisible',message:'Checking visibility',data:{x,y,width,height,viewport,hasViewport:!!viewport},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     if (!viewport) return true; // Render all if viewport unknown
     return !(
       x + (width || 0) < viewport.minX ||
@@ -741,9 +731,6 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
     </div>
   );
 
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CanvasPageComponent.jsx:render',message:'Render with state',data:{containersCount:containers.length,pathsCount:paths.length,transform,canvasRefExists:!!canvasRef.current},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-  // #endregion
   return (
     <div className="h-full w-full flex flex-col overflow-hidden font-sans bg-[#f8f8f8] dark:bg-gray-800 text-gray-900 dark:text-gray-100">
       <style>{`
@@ -762,7 +749,7 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
       {/* Toolbar */}
       <div className="py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center px-4 shadow-sm shrink-0 z-50 justify-between select-none">
         <div className="flex items-center gap-2">
-           <div className="flex bg-gray-100 rounded-lg p-1 gap-1 mr-4">
+           <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 gap-1 mr-4">
               <ToolbarBtn active={tool === 'cursor'} onClick={() => setTool('cursor')} icon={<MousePointer2 size={18}/>} title="Select (V)" />
               <ToolbarBtn active={tool === 'hand' || isSpacePressed} onClick={() => setTool('hand')} icon={<Hand size={18}/>} title="Pan (Space / Middle Mouse)" />
               <ToolbarBtn active={tool === 'pen' || tool === 'eraser'} onClick={() => setTool('pen')} icon={<PenTool size={18} className={tool === 'pen' || tool === 'eraser' ? 'text-purple-600' : ''}/>} title="Draw (P)" />
@@ -837,11 +824,9 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
                    onChange={(e) => { 
                      const newTitle = e.target.value;
                      setPageTitle(newTitle);
-                     // Immediately update page name to keep them in sync
                      onUpdate({ name: newTitle });
                    }}
                    onBlur={() => {
-                     // Ensure final sync on blur
                      if (pageTitle !== page.name) {
                        onUpdate({ name: pageTitle });
                      }
@@ -864,7 +849,7 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
                 className={`absolute pointer-events-auto hover:ring-1 hover:ring-purple-200 ${selectedId === p.id && selectedType === 'path' ? 'ring-1 ring-purple-500 bg-purple-50/10' : ''}`}
                 style={{ left: p.x + 25000, top: p.y + 25000, width: p.width, height: p.height, cursor: tool === 'cursor' ? 'move' : (tool === 'eraser' ? 'cell' : 'inherit') }}
                 onPointerDown={(e) => {
-                   if (e.button === 1) return; // Let middle mouse bubble to canvas for panning
+                   if (e.button === 1) return;
                    if (tool === 'cursor') {
                       e.stopPropagation();
                       setSelectedId(p.id);
@@ -902,16 +887,10 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
            )}
 
            {/* Containers */}
-           {(() => {
-             const filteredContainers = containers.filter(container => {
-               const containerHeight = container.type === 'image' ? 200 : (container.type === 'map' ? (container.height || 300) : 100);
-               return isElementVisible(container.x, container.y, container.width || 200, containerHeight);
-             });
-             // #region agent log
-             fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CanvasPageComponent.jsx:containers-render',message:'Rendering containers',data:{totalContainers:containers.length,visibleContainers:filteredContainers.length,containerDetails:containers.map(c=>({id:c.id,x:c.x,y:c.y,type:c.type}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
-             // #endregion
-             return filteredContainers;
-           })().map(container => (
+           {containers.filter(container => {
+             const containerHeight = container.type === 'image' ? 200 : (container.type === 'map' ? (container.height || 300) : 100);
+             return isElementVisible(container.x, container.y, container.width || 200, containerHeight);
+           }).map(container => (
              <UniversalContainer
                key={container.id}
                container={container}
@@ -920,7 +899,7 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
                onSelect={() => { setSelectedId(container.id); setSelectedType('container'); }}
                onUpdate={(fields) => setContainers(prev => prev.map(c => c.id === container.id ? { ...c, ...fields } : c))}
                onDragStart={(e) => {
-                 if (e.button === 1) return; // Middle mouse only pans
+                 if (e.button === 1) return;
                  e.stopPropagation();
                  pushToHistory();
                  setSelectedId(container.id);
@@ -938,6 +917,7 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
                }}
                onDelete={() => { pushToHistory(); setContainers(prev => prev.filter(c => c.id !== container.id)); }}
                onSlash={(x, y) => setSlashMenu({ x, y, containerId: container.id })}
+               MapBlock={MapBlock}
              />
            ))}
          </div>
@@ -955,7 +935,6 @@ const CanvasPageComponent = ({ page, onUpdate, saveToHistory, showNotification }
                               ? { ...c, mapData } 
                               : c
                       ));
-                      // Don't close automatically - let user close with Done button
                   }}
                   onClose={() => {
                       setMapConfigContainerId(null);

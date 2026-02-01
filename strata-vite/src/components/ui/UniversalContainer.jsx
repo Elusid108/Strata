@@ -92,7 +92,7 @@ const UniversalContainer = ({
     >
       {/* Drag Handle */}
       <div 
-        className={`h-4 w-full bg-gray-50 border border-gray-200 border-b-0 rounded-t cursor-move flex items-center justify-center transition-opacity z-50
+        className={`h-4 w-full bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 border-b-0 rounded-t cursor-move flex items-center justify-center transition-opacity z-50
           ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
         `}
         onMouseDown={(e) => {
@@ -107,15 +107,15 @@ const UniversalContainer = ({
 
       {/* Content Area */}
       <div className={`
-        relative bg-white shadow-sm
-        ${isSelected ? 'border border-gray-300 ring-1 ring-purple-500/20' : 'border border-transparent hover:border-gray-200'}
+        relative bg-white dark:bg-gray-800 shadow-sm dark:shadow-gray-900/50
+        ${isSelected ? 'border border-gray-300 dark:border-gray-600 ring-1 ring-purple-500/20' : 'border border-transparent hover:border-gray-200 dark:hover:border-gray-600'}
       `}>
         {isSelected && (
           <>
             {/* Delete Button */}
             <button 
               onClick={(e) => { e.stopPropagation(); onDelete(); }} 
-              className="absolute -right-2 -top-2 bg-white rounded-full p-1 shadow border hover:bg-red-50 text-gray-400 hover:text-red-500 z-50"
+              className="absolute -right-2 -top-2 bg-white dark:bg-gray-700 rounded-full p-1 shadow border dark:border-gray-600 hover:bg-red-50 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 z-50"
             >
               <X size={10} />
             </button>
@@ -137,7 +137,7 @@ const UniversalContainer = ({
             ref={contentRef}
             contentEditable
             suppressContentEditableWarning
-            className="outline-none px-3 py-2 min-h-[1em]"
+            className="outline-none px-3 py-2 min-h-[1em] text-gray-900 dark:text-gray-100"
             onInput={handleInput}
             onClick={handleContentClick}
             onKeyDown={handleKeyDown}
