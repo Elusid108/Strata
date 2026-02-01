@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.8";
+  const APP_VERSION = "2.7.0";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -393,6 +393,9 @@
                     case 'h2': return '<div class="block block-h2">' + c + '</div>';
                     case 'h3': return '<div class="block block-h3">' + c + '</div>';
                     case 'h4': return '<div class="block block-h4">' + c + '</div>';
+                    case 'ul': return '<div class="block block-ul"><ul>' + c + '</ul></div>';
+                    case 'ol': return '<div class="block block-ol"><ol>' + c + '</ol></div>';
+                    case 'todo': return '<div class="block block-todo"><ul>' + c + '</ul></div>';
                     case 'divider': return '<div class="block-divider"></div>';
                     case 'image': return block.url ? '<div class="block block-image"><img src="' + block.url + '" alt=""></div>' : '';
                     case 'video': return block.url ? '<div class="block block-video"><iframe src="https://www.youtube.com/embed/' + getYouTubeId(block.url) + '" allowfullscreen></iframe></div>' : '';
@@ -505,6 +508,9 @@
     { cmd: 'h2', aliases: ['h2', 'header2', 'heading2'], label: 'Heading 2', desc: 'Medium section heading', type: 'h2' },
     { cmd: 'h3', aliases: ['h3', 'header3', 'heading3'], label: 'Heading 3', desc: 'Small section heading', type: 'h3' },
     { cmd: 'h4', aliases: ['h4', 'header4', 'heading4'], label: 'Heading 4', desc: 'Tiny section heading', type: 'h4' },
+    { cmd: 'ul', aliases: ['ul', 'bullet', 'list'], label: 'Bullet List', desc: 'Unordered list', type: 'ul' },
+    { cmd: 'ol', aliases: ['ol', 'numbered', 'ordered'], label: 'Numbered List', desc: 'Ordered list', type: 'ol' },
+    { cmd: 'todo', aliases: ['todo', 'checkbox', 'task'], label: 'Todo List', desc: 'Checkbox list', type: 'todo' },
     { cmd: 'img', aliases: ['img', 'image', 'pic', 'picture'], label: 'Image', desc: 'Embed an image', type: 'image' },
     { cmd: 'vid', aliases: ['vid', 'video', 'youtube'], label: 'Video', desc: 'Embed YouTube video', type: 'video' },
     { cmd: 'link', aliases: ['link', 'url', 'bookmark'], label: 'Link', desc: 'Web bookmark', type: 'link' },
@@ -737,6 +743,9 @@
       };
 
       const selectSlashCommand = (cmd) => {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:selectSlashCommand',message:'selectSlashCommand',data:{cmdType:cmd.type,domContentBefore:contentEditableRef.current?.innerHTML?.slice(0,80)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+          // #endregion
           setSlashMenu({ open: false, filter: '', selectedIndex: 0, position: { top: 0, left: 0 } });
           // Clear the contentEditable content before converting to ensure slash command text is removed
           if (contentEditableRef.current) {
@@ -908,6 +917,454 @@
       );
   });
 
+  // Normalize list content: ensure valid list markup (at least one li for ul/ol; for todo add data-checked)
+  const normalizeListContent = (raw, listType) => {
+    const rawPreview = typeof raw === 'string' ? raw.slice(0, 80) : raw;
+    if (!raw || raw.trim() === '' || raw === '<br>') {
+      const out = listType === 'todo' ? '<li data-checked="false"></li>' : '<li></li>';
+      // #region agent log
+      if (listType === 'ul' || listType === 'ol') fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:normalizeListContent',message:'normalizeListContent',data:{rawPreview,listType,result:'empty'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      return out;
+    }
+    if (listType === 'todo') {
+      const div = document.createElement('div');
+      div.innerHTML = raw;
+      const lis = div.querySelectorAll('li');
+      lis.forEach(li => {
+        if (!li.hasAttribute('data-checked')) li.setAttribute('data-checked', 'false');
+      });
+      return div.innerHTML || '<li data-checked="false"></li>';
+    }
+    if (!raw.includes('<li>')) {
+      const out = `<li>${raw}</li>`;
+      // #region agent log
+      if (listType === 'ul' || listType === 'ol') fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:normalizeListContent',message:'normalizeListContent wrap',data:{rawPreview,listType},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+      return out;
+    }
+    return raw;
+  };
+
+  const ListBlock = memo(({ listType, html, onChange, onInsertBelow, onExitList, blockId, autoFocusId, onFocus, onConvert, onDelete, isLastBlock }) => {
+    const listRef = useRef(null);
+    const todoContainerRef = useRef(null);
+    const todoFirstContentRef = useRef(null);
+    const todoLastSerializedRef = useRef(null);
+    const isLocked = useRef(false);
+
+    const safeHtml = normalizeListContent(html, listType);
+
+    useEffect(() => {
+      if (!listRef.current) return;
+      const el = listRef.current;
+      if (!isLocked.current && el.innerHTML !== safeHtml) {
+        el.innerHTML = safeHtml;
+      }
+    }, [safeHtml]);
+
+    useEffect(() => {
+      if (!listRef.current) return;
+      listRef.current.innerHTML = normalizeListContent(html, listType);
+    }, [blockId]);
+
+    useLayoutEffect(() => {
+      if (autoFocusId !== blockId || !listRef.current) return;
+      const el = listRef.current;
+      el.focus();
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }, [autoFocusId, blockId]);
+
+    useLayoutEffect(() => {
+      if (listType === 'todo' && autoFocusId === blockId && todoFirstContentRef.current) {
+        todoFirstContentRef.current.focus();
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(todoFirstContentRef.current);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }, [listType, autoFocusId, blockId]);
+
+    const getCurrentLi = () => {
+      const sel = window.getSelection();
+      if (sel.rangeCount === 0) return null;
+      let node = sel.anchorNode;
+      while (node && node !== listRef.current) {
+        if (node.nodeName === 'LI') return node;
+        node = node.parentNode;
+      }
+      return null;
+    };
+
+    const getListLevel = (li) => {
+      if (!li || !listRef.current) return 0;
+      let level = 0;
+      let p = li.parentNode;
+      while (p && p !== listRef.current) {
+        if (p.nodeName === 'UL' || p.nodeName === 'OL') level++;
+        p = p.parentNode;
+      }
+      return level;
+    };
+
+    const handleInput = () => {
+      isLocked.current = true;
+      if (listRef.current) onChange(listRef.current.innerHTML);
+    };
+
+    const handleBlur = () => { isLocked.current = false; };
+
+    const handlePaste = (e) => {
+      e.preventDefault();
+      const html = e.clipboardData?.getData('text/html');
+      const plain = e.clipboardData?.getData('text/plain') || '';
+      if (!listRef.current) return;
+      const fragment = document.createDocumentFragment();
+      if (html) {
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const pastedLis = div.querySelectorAll('li');
+        if (pastedLis.length > 0) {
+          pastedLis.forEach(li => {
+            const clone = li.cloneNode(true);
+            if (listType === 'todo' && !clone.hasAttribute('data-checked')) clone.setAttribute('data-checked', 'false');
+            fragment.appendChild(clone);
+          });
+        }
+      }
+      if (fragment.childNodes.length === 0 && plain) {
+        const lines = plain.split(/\r?\n/).filter(Boolean);
+        lines.forEach(line => {
+          const li = document.createElement('li');
+          if (listType === 'todo') li.setAttribute('data-checked', 'false');
+          li.textContent = line;
+          fragment.appendChild(li);
+        });
+      }
+      if (fragment.childNodes.length === 0) return;
+      const sel = window.getSelection();
+      if (sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(fragment);
+      range.collapse(false);
+      isLocked.current = true;
+      onChange(listRef.current.innerHTML);
+      isLocked.current = false;
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const el = listRef.current;
+        if (!el) return;
+        const text = el.innerText.trim();
+        const sel = window.getSelection();
+        if (sel.rangeCount === 0) return;
+
+        // Empty Enter: last line empty -> exit list
+        if (onExitList) {
+          const lis = el.querySelectorAll('li');
+          const lastLi = lis[lis.length - 1];
+          if (lastLi && lastLi.innerText.trim() === '' && lis.length >= 1) {
+            const range = sel.getRangeAt(0);
+            if (lastLi.contains(range.startContainer) || lastLi === range.startContainer) {
+              e.preventDefault();
+              lastLi.remove();
+              const newContent = el.innerHTML || (listType === 'todo' ? '<li data-checked="false"></li>' : '<li></li>');
+              onChange(newContent);
+              onExitList();
+              return;
+            }
+          }
+        }
+
+        // Let browser create new li for Enter in ul/ol; for todo we'll normalize after
+        if (listType === 'ul' || listType === 'ol') {
+          // Allow default: browser creates new li. Ensure same level if needed (browser usually does).
+          return;
+        }
+        if (listType === 'todo') {
+          // After default, new li needs data-checked="false"
+          setTimeout(() => {
+            if (listRef.current) {
+              const lis = listRef.current.querySelectorAll('li');
+              lis.forEach(li => { if (!li.hasAttribute('data-checked')) li.setAttribute('data-checked', 'false'); });
+              isLocked.current = true;
+              onChange(listRef.current.innerHTML);
+              isLocked.current = false;
+            }
+          }, 0);
+        }
+        return;
+      }
+
+      if (e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        if (listType === 'ul' || listType === 'ol') {
+          const li = getCurrentLi();
+          if (!li) return;
+          const list = li.parentNode;
+          if (!list || list === listRef.current) return;
+          const parentList = list.parentNode;
+          if (!parentList || parentList === listRef.current) return;
+          const next = li.nextElementSibling;
+          if (next) {
+            parentList.insertBefore(li, next);
+          } else {
+            parentList.appendChild(li);
+          }
+          if (list.childNodes.length === 0) list.remove();
+          if (listRef.current) onChange(listRef.current.innerHTML);
+        }
+        return;
+      }
+
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        if (listType === 'todo') {
+          const li = getCurrentLi();
+          if (li) {
+            const checked = li.getAttribute('data-checked') === 'true';
+            li.setAttribute('data-checked', checked ? 'false' : 'true');
+            if (listRef.current) onChange(listRef.current.innerHTML);
+          }
+          return;
+        }
+        if (listType === 'ul' || listType === 'ol') {
+          const li = getCurrentLi();
+          if (!li) return;
+          const prev = li.previousElementSibling;
+          if (prev) {
+            let nest = prev.querySelector(listType === 'ul' ? 'ul' : 'ol');
+            if (!nest) {
+              nest = document.createElement(listType === 'ul' ? 'ul' : 'ol');
+              prev.appendChild(nest);
+            }
+            nest.appendChild(li);
+            if (listRef.current) onChange(listRef.current.innerHTML);
+          }
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        onInsertBelow();
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        const el = listRef.current;
+        if (!el) return;
+        const text = el.innerText.trim();
+        if (text === '' && !isLastBlock && onDelete) {
+          e.preventDefault();
+          onDelete();
+        }
+      }
+    };
+
+    const listClassName = listType === 'ul'
+      ? 'list-disc list-outside ml-4 outline-none min-h-[1.5em] cursor-text [&_ul]:list-[circle] [&_ul_ul]:list-[square]'
+      : listType === 'ol'
+      ? 'list-decimal list-outside ml-4 outline-none min-h-[1.5em] cursor-text [&_ol]:list-[lower-alpha] [&_ol_ol]:list-[lower-roman]'
+      : '';
+
+    // Todo: checkbox to the left, text field to the right (cursor in text). Content divs are uncontrolled to avoid cursor jump.
+    if (listType === 'todo') {
+      const lastSerializedRef = useRef(null);
+      const parseTodoItems = (htmlStr) => {
+        const div = document.createElement('div');
+        div.innerHTML = normalizeListContent(htmlStr || '', 'todo');
+        const lis = div.querySelectorAll('li');
+        return Array.from(lis).map(li => ({
+          checked: li.getAttribute('data-checked') === 'true',
+          html: li.innerHTML || ''
+        }));
+      };
+      const items = parseTodoItems(safeHtml);
+      if (items.length === 0) items.push({ checked: false, html: '' });
+
+      const serializeTodoItems = (container) => {
+        if (!container) return '';
+        const rows = container.querySelectorAll('.todo-row');
+        const parts = [];
+        rows.forEach(row => {
+          const cb = row.querySelector('input[type="checkbox"]');
+          const content = row.querySelector('.todo-row-content');
+          const checked = cb ? cb.checked : false;
+          const html = content ? content.innerHTML : '';
+          parts.push(`<li data-checked="${checked}">${html}</li>`);
+        });
+        return parts.join('') || '<li data-checked="false"></li>';
+      };
+
+      const handleTodoInput = () => {
+        if (todoContainerRef.current) {
+          const serialized = serializeTodoItems(todoContainerRef.current);
+          todoLastSerializedRef.current = serialized;
+          isLocked.current = true;
+          onChange(serialized);
+        }
+      };
+
+      const handleTodoKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          const container = todoContainerRef.current;
+          if (!container) return;
+          const row = e.target.closest('.todo-row');
+          if (!row) return;
+          const content = row.querySelector('.todo-row-content');
+          if (content && e.target === content) {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = content.innerText.trim();
+            if (onExitList && !text && row === container.querySelector('.todo-row:last-child')) {
+              row.remove();
+              const serialized = serializeTodoItems(container) || '<li data-checked="false"></li>';
+              todoLastSerializedRef.current = serialized;
+              onChange(serialized);
+              onExitList();
+              return;
+            }
+            const serialized = serializeTodoItems(container);
+            const withNewRow = serialized + '<li data-checked="false"></li>';
+            todoLastSerializedRef.current = withNewRow;
+            onChange(withNewRow);
+            requestAnimationFrame(() => {
+              const rows = todoContainerRef.current?.querySelectorAll('.todo-row');
+              const lastContent = rows?.length ? rows[rows.length - 1].querySelector('.todo-row-content') : null;
+              if (lastContent) {
+                lastContent.focus();
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(lastContent);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            });
+          }
+          return;
+        }
+        if (e.key === 'Tab' && !e.shiftKey) {
+          const row = e.target.closest('.todo-row');
+          if (row) {
+            e.preventDefault();
+            const cb = row.querySelector('input[type="checkbox"]');
+            if (cb) {
+              cb.checked = !cb.checked;
+              const serialized = serializeTodoItems(todoContainerRef.current);
+              todoLastSerializedRef.current = serialized;
+              onChange(serialized);
+            }
+          }
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          onInsertBelow();
+        }
+        if (e.key === 'Backspace') {
+          const container = todoContainerRef.current;
+          if (!container) return;
+          const row = e.target.closest('.todo-row');
+          const content = row?.querySelector('.todo-row-content');
+          if (content && e.target === content && content.innerText.trim() === '' && row && !isLastBlock && onDelete) {
+            const rows = container.querySelectorAll('.todo-row');
+            if (rows.length === 1) { e.preventDefault(); onDelete(); }
+          }
+        }
+      };
+
+      const handleTodoCheck = (idx) => {
+        const container = todoContainerRef.current;
+        if (!container) return;
+        const rows = container.querySelectorAll('.todo-row');
+        const row = rows[idx];
+        if (row) {
+          const cb = row.querySelector('input[type="checkbox"]');
+          if (cb) {
+            cb.checked = !cb.checked;
+            const serialized = serializeTodoItems(container);
+            todoLastSerializedRef.current = serialized;
+            onChange(serialized);
+          }
+        }
+      };
+
+      // Sync DOM from props only when content came from outside (block switch / load), not after our own onChange
+      useLayoutEffect(() => {
+        if (listType !== 'todo' || !todoContainerRef.current) return;
+        if (todoLastSerializedRef.current !== null && safeHtml === todoLastSerializedRef.current) {
+          todoLastSerializedRef.current = null;
+          return;
+        }
+        const rows = todoContainerRef.current.querySelectorAll('.todo-row');
+        const parsed = parseTodoItems(safeHtml);
+        parsed.forEach((item, i) => {
+          if (rows[i]) {
+            const contentEl = rows[i].querySelector('.todo-row-content');
+            const cb = rows[i].querySelector('input[type="checkbox"]');
+            if (contentEl && contentEl.innerHTML !== item.html) contentEl.innerHTML = item.html;
+            if (cb) cb.checked = !!item.checked;
+          }
+        });
+      }, [listType, safeHtml]);
+
+      const itemsToRender = parseTodoItems(safeHtml);
+      if (itemsToRender.length === 0) itemsToRender.push({ checked: false, html: '' });
+
+      return (
+        <div ref={todoContainerRef} className="list-block-todo space-y-1 ml-0" onKeyDown={handleTodoKeyDown}>
+          {itemsToRender.map((item, idx) => (
+            <div key={`${blockId}-${idx}`} className="todo-row flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="flex-shrink-0 w-5 h-5 rounded border-2 border-gray-400 cursor-pointer"
+                tabIndex={-1}
+                defaultChecked={item.checked}
+                onClick={(e) => { e.preventDefault(); handleTodoCheck(idx); }}
+              />
+              <div
+                ref={idx === 0 ? todoFirstContentRef : undefined}
+                className="todo-row-content flex-1 min-w-0 outline-none min-h-[1.5em] empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
+                contentEditable
+                suppressContentEditableWarning
+                data-placeholder="List item..."
+                onInput={handleTodoInput}
+                onBlur={handleBlur}
+                onFocus={() => onFocus && onFocus()}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    const ListTag = listType === 'ul' ? 'ul' : 'ol';
+    return (
+      <ListTag
+        ref={listRef}
+        className={listClassName}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+        onBlur={handleBlur}
+        onFocus={() => onFocus && onFocus()}
+      />
+    );
+  });
+
   const BlockComponent = memo(({ block, rowId, colId, onUpdate, onDelete, onInsertAfter, autoFocusId, onRequestFocus, onDragStart, onDragOver, onDrop, dropTarget, isSelected, onHandleClick, onFocus, isLastBlock }) => {
       const isTarget = dropTarget && dropTarget.blockId === block.id;
       const indicatorStyle = isTarget ? getDropIndicatorClass(dropTarget.position) : '';
@@ -921,7 +1378,13 @@
 
       const handleConvert = (newType) => {
           const isMedia = ['image', 'video', 'link'].includes(newType);
-          onUpdate(block.id, { type: newType, content: isMedia ? '' : '', url: '' });
+          const listContent = (newType === 'ul' || newType === 'ol') ? '<li></li>' : (newType === 'todo' ? '<li data-checked="false"></li>' : null);
+          const content = listContent !== null ? listContent : (isMedia ? '' : '');
+          const updates = { type: newType, content, url: '' };
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handleConvert',message:'handleConvert',data:{blockId:block.id,newType,content,runId:'post-fix'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+          // #endregion
+          onUpdate(block.id, updates);
           if (newType === 'divider') {
               onInsertAfter(block.id, 'text');
           } else if (onRequestFocus) {
@@ -960,6 +1423,9 @@
               case 'h2': return <ContentBlock tagName="h2" className="text-2xl font-bold mb-3 border-b border-gray-100 pb-1" {...props} placeholder="Heading 2" />;
               case 'h3': return <ContentBlock tagName="h3" className="text-xl font-bold mb-2" {...props} placeholder="Heading 3" />;
               case 'h4': return <ContentBlock tagName="h4" className="text-lg font-semibold mb-2 text-gray-600" {...props} placeholder="Heading 4" />;
+              case 'ul': (function(){ fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:renderTextContent ul',message:'render ListBlock ul',data:{blockId:block.id,contentPreview:block.content?.slice(0,80)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(function(){}); })(); return <ListBlock listType="ul" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
+              case 'ol': return <ListBlock listType="ol" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
+              case 'todo': return <ListBlock listType="todo" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
               default: return <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" {...props} />;
           }
       };
@@ -3873,13 +4339,22 @@
     const handleUpdateBlock = useCallback((blockId, updates) => {
         const r = activePageRowsRef.current;
         if (!r) return;
+        let mergedContent = undefined;
         const newRows = r.map(row => ({
             ...row,
             columns: row.columns.map(col => ({
                 ...col,
-                blocks: col.blocks.map(b => b.id === blockId ? { ...b, ...updates } : b)
+                blocks: col.blocks.map(b => {
+                    if (b.id !== blockId) return b;
+                    const merged = { ...b, ...updates };
+                    mergedContent = merged.content;
+                    return merged;
+                })
             }))
         }));
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handleUpdateBlock',message:'handleUpdateBlock',data:{blockId,updates,mergedContent:typeof mergedContent==='string'?mergedContent.slice(0,80):mergedContent},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         setActivePageRows(newRows);
         scheduleSyncToData();
     }, []);
