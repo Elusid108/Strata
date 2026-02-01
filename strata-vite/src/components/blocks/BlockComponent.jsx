@@ -48,7 +48,9 @@ const BlockComponent = memo(({
     const isMedia = ['image', 'video', 'link'].includes(newType);
     const isStructural = ['divider', 'map'].includes(newType);
     const listContent = (newType === 'ul' || newType === 'ol') ? '<li></li>' : (newType === 'todo' ? '<li data-checked="false"></li>' : null);
-    const content = listContent !== null ? listContent : ((isMedia || isStructural) ? '' : block.content);
+    // Check if content is a slash command (starts with /) - if so, clear it
+    const isSlashCommand = block.content && /^\/\w+$/.test(block.content.trim());
+    const content = listContent !== null ? listContent : ((isMedia || isStructural || isSlashCommand) ? '' : block.content);
     onUpdate(block.id, { 
       type: newType, 
       content,
@@ -124,7 +126,7 @@ const BlockComponent = memo(({
 
     switch (block.type) {
       case 'h1': return <ContentBlock tagName="h1" className="text-3xl font-bold mb-4" {...props} placeholder="Heading 1" />;
-      case 'h2': return <ContentBlock tagName="h2" className="text-2xl font-bold mb-3 border-b border-gray-100 pb-1" {...props} placeholder="Heading 2" />;
+      case 'h2': return <ContentBlock tagName="h2" className="text-2xl font-bold mb-3" {...props} placeholder="Heading 2" />;
       case 'h3': return <ContentBlock tagName="h3" className="text-xl font-bold mb-2" {...props} placeholder="Heading 3" />;
       case 'h4': return <ContentBlock tagName="h4" className="text-lg font-semibold mb-2 text-gray-600 dark:text-gray-400" {...props} placeholder="Heading 4" />;
       case 'ul': return <ListBlock listType="ul" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;

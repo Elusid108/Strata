@@ -38,20 +38,16 @@ function App() {
 
   // Block delete handler
   const handleDeleteBlock = useCallback((blockId) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleDeleteBlock',message:'Delete triggered',data:{blockId,currentAutoFocusId:autoFocusId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     setBlocks(prev => {
       const index = prev.findIndex(b => b.id === blockId)
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleDeleteBlock',message:'Block index found',data:{blockId,index,prevBlockId:index>0?prev[index-1].id:null,totalBlocks:prev.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
+      const prevBlockId = index > 0 ? prev[index - 1].id : null
+      // Focus the previous block after deletion
+      if (prevBlockId) {
+        setTimeout(() => setAutoFocusId(prevBlockId), 0)
+      }
       return prev.filter(b => b.id !== blockId)
     })
     setLastAction(`Deleted block ${blockId}`)
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleDeleteBlock',message:'After delete - autoFocusId NOT set',data:{blockId,autoFocusIdAfter:'not-set'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
   }, [])
 
   // Insert block after handler

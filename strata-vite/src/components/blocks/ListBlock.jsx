@@ -164,16 +164,40 @@ const ListBlock = memo(({
         if (!li) return;
         const list = li.parentNode;
         if (!list || list === listRef.current) return;
-        const parentList = list.parentNode;
-        if (!parentList || parentList === listRef.current) return;
-        const next = li.nextElementSibling;
-        if (next) {
-          parentList.insertBefore(li, next);
-        } else {
-          parentList.appendChild(li);
-        }
+        const parentLi = list.parentNode;
+        if (!parentLi || parentLi.nodeName !== 'LI') return;
+        // Move li after the parent li
+        const grandparent = parentLi.parentNode;
+        if (!grandparent) return;
+        grandparent.insertBefore(li, parentLi.nextSibling);
+        // Clean up empty nested list
         if (list.childNodes.length === 0) list.remove();
+        isLocked.current = true;
         if (listRef.current) onChange(listRef.current.innerHTML);
+        // Restore cursor to end of the li's own text (not nested content)
+        requestAnimationFrame(() => {
+          if (li && li.isConnected) {
+            const sel = window.getSelection();
+            const range = document.createRange();
+            // Find the first text node directly in the li (not in nested lists)
+            let textNode = null;
+            for (const child of li.childNodes) {
+              if (child.nodeType === Node.TEXT_NODE && child.textContent.trim()) {
+                textNode = child;
+                break;
+              }
+            }
+            if (textNode) {
+              range.setStart(textNode, textNode.length);
+              range.setEnd(textNode, textNode.length);
+            } else {
+              range.setStart(li, 0);
+              range.setEnd(li, 0);
+            }
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        });
       }
       return;
     }
@@ -185,6 +209,7 @@ const ListBlock = memo(({
         if (li) {
           const checked = li.getAttribute('data-checked') === 'true';
           li.setAttribute('data-checked', checked ? 'false' : 'true');
+          isLocked.current = true;
           if (listRef.current) onChange(listRef.current.innerHTML);
         }
         return;
@@ -200,7 +225,32 @@ const ListBlock = memo(({
             prev.appendChild(nest);
           }
           nest.appendChild(li);
+          isLocked.current = true;
           if (listRef.current) onChange(listRef.current.innerHTML);
+          // Restore cursor to end of the li's own text (not nested content)
+          requestAnimationFrame(() => {
+            if (li && li.isConnected) {
+              const sel = window.getSelection();
+              const range = document.createRange();
+              // Find the first text node directly in the li (not in nested lists)
+              let textNode = null;
+              for (const child of li.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE && child.textContent.trim()) {
+                  textNode = child;
+                  break;
+                }
+              }
+              if (textNode) {
+                range.setStart(textNode, textNode.length);
+                range.setEnd(textNode, textNode.length);
+              } else {
+                range.setStart(li, 0);
+                range.setEnd(li, 0);
+              }
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          });
         }
       }
       return;

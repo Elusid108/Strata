@@ -4,11 +4,11 @@
 
 /* List Styles for Nested Lists */
 ul { list-style-type: disc !important; }
-ul ul { list-style-type: circle !important; }
-ul ul ul { list-style-type: square !important; }
+ul ul { list-style-type: circle !important; margin-left: 1.5rem !important; }
+ul ul ul { list-style-type: square !important; margin-left: 1.5rem !important; }
 ol { list-style-type: decimal !important; }
-ol ol { list-style-type: lower-alpha !important; }
-ol ol ol { list-style-type: lower-roman !important; }
+ol ol { list-style-type: lower-alpha !important; margin-left: 1.5rem !important; }
+ol ol ol { list-style-type: lower-roman !important; margin-left: 1.5rem !important; }
 
 /* Hide Scrollbar */
 .no-scrollbar::-webkit-scrollbar { display: none; }

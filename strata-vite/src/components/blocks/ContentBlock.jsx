@@ -90,6 +90,8 @@ const ContentBlock = memo(({
     if (contentEditableRef.current) {
       contentEditableRef.current.innerHTML = '';
     }
+    // Also clear React state so handleConvert uses empty content
+    onChange('');
     onConvert(cmd.type);
   };
 
@@ -153,6 +155,8 @@ const ContentBlock = memo(({
             e.stopPropagation();
             // Clear the contentEditable content before converting
             contentEditableRef.current.innerHTML = '';
+            // Also clear React state so handleConvert uses empty content
+            onChange('');
             onConvert(matchedCmd.type);
             // For divider, don't create a new block - the conversion handles it
             if (matchedCmd.type === 'divider') {
@@ -216,18 +220,12 @@ const ContentBlock = memo(({
     // Handle Backspace in empty blocks
     if (e.key === 'Backspace') {
       const text = contentEditableRef.current?.innerText?.trim() || '';
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ContentBlock.jsx:handleKeyDown',message:'Backspace pressed',data:{blockId,text,tagName,isLastBlock,hasOnDelete:!!onDelete},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       if (text === '') {
         // Empty block
         if (tagName === 'div') {
           // Text block - delete if not last block
           if (!isLastBlock && onDelete) {
             e.preventDefault();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ContentBlock.jsx:handleKeyDown',message:'Calling onDelete',data:{blockId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-            // #endregion
             onDelete();
           }
         } else {
