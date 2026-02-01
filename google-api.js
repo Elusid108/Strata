@@ -1981,7 +1981,11 @@ const loadFromDriveStructure = async (rootFolderId) => {
                 for (const { page, pageContent } of results) {
                     if (!pageContent) continue;
                     
-                    const pageType = page.type;
+                    // Derive page type from content when file properties lack it (fix for existing link files)
+                    const googleTypes = ['doc', 'sheet', 'slide', 'pdf', 'drive'];
+                    const contentType = googleTypes.includes(pageContent.type) ? pageContent.type : null;
+                    const pageType = contentType || page.type;
+                    if (contentType) page.type = contentType;
                     page.name = pageContent.name || page.name;
                     const raw = pageContent.content || pageContent.rows || [];
                     if (raw && raw.version === TREE_VER && Array.isArray(raw.children)) {
@@ -2012,11 +2016,12 @@ const loadFromDriveStructure = async (rootFolderId) => {
                         page.codeType = pageContent.codeType || 'mermaid';
                     }
                     
-                    if (['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType)) {
-                        page.embedUrl = pageContent.embedUrl;
-                        page.webViewLink = pageContent.webViewLink;
-                        page.driveLinkFileId = page.driveFileId; // page JSON file
-                        page.driveFileId = pageContent.driveFileId || page.driveFileId; // linked Google file
+                    // Apply Google page link data when type matches or content has embedUrl/driveFileId
+                    if (googleTypes.includes(pageType) || pageContent.embedUrl || pageContent.driveFileId) {
+                        page.embedUrl = pageContent.embedUrl || page.embedUrl;
+                        page.webViewLink = pageContent.webViewLink || page.webViewLink;
+                        page.driveLinkFileId = page.driveFileId; // page JSON file ID
+                        page.driveFileId = pageContent.driveFileId || page.driveFileId; // linked Google file ID
                     }
                 }
             }
@@ -2084,8 +2089,14 @@ const syncGooglePageLink = async (page, tabFolderId) => {
                 });
                 if (!existing.result.trashed) {
                     // File exists, update it
+                    const updateMetadata = { name: fileName };
+                    const props = {
+                        strata_pageType: String(page.type || 'drive'),
+                        strata_icon: String(page.icon || '📄')
+                    };
+                    updateMetadata.properties = props;
                     const form = new FormData();
-                    form.append('metadata', new Blob([JSON.stringify({ name: fileName })], { type: 'application/json' }));
+                    form.append('metadata', new Blob([JSON.stringify(updateMetadata)], { type: 'application/json' }));
                     form.append('file', new Blob([JSON.stringify(linkContent)], { type: 'application/json' }));
                     
                     await fetch(`https://www.googleapis.com/upload/drive/v3/files/${page.driveLinkFileId}?uploadType=multipart`, {
@@ -2106,6 +2117,11 @@ const syncGooglePageLink = async (page, tabFolderId) => {
             parents: [tabFolderId],
             mimeType: 'application/json'
         };
+        const props = {
+            strata_pageType: String(page.type || 'drive'),
+            strata_icon: String(page.icon || '📄')
+        };
+        metadata.properties = props;
         
         const form = new FormData();
         form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));

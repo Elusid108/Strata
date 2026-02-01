@@ -105,7 +105,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.7.2";
+  const APP_VERSION = "2.7.3";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -7756,7 +7756,11 @@ html.dark .canvas-grid {
                                   className={`page-item group flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} p-3 border-b cursor-pointer text-sm outline-none transition-all ${activePageId === page.id ? 'bg-gray-100 border-l-4 border-l-blue-500' : 'hover:bg-gray-50 border-l-4 border-l-transparent'}`}
                                   onClick={() => { if (activePageId === page.id) return; selectPage(page.id); }}
                                   title={settings.condensedView ? page.name : undefined}>
-                                  <span className={settings.condensedView ? 'text-xl' : 'mr-1 flex-shrink-0'}>{page.icon || '📄'}</span>
+                                  <span 
+                                      className={`${settings.condensedView ? 'text-xl' : 'mr-1 flex-shrink-0'} cursor-pointer hover:opacity-80 page-icon-trigger`}
+                                      onClick={(e) => { e.stopPropagation(); setPageIconPicker(pageIconPicker?.pageId === page.id ? null : { pageId: page.id, top: e.clientY, left: e.clientX }); }}
+                                      title="Change icon"
+                                  >{page.icon || '📄'}</span>
                                   {!settings.condensedView && (activePageId === page.id && editingPageId === page.id ? (
                                       <input className="flex-1 min-w-0 bg-transparent outline-none page-input" value={page.name} onChange={(e) => updateLocalName('page', page.id, e.target.value)} onFocus={(e) => e.target.select()} onBlur={() => { syncRenameToDrive('page', page.id); setEditingPageId(null); }} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); }} autoFocus />
                                   ) : ( 
@@ -7873,6 +7877,16 @@ html.dark .canvas-grid {
               </div>
           )}
 
+          {pageIconPicker && (
+              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] page-icon-picker animate-fade-in w-64 h-64 overflow-y-auto" style={{ top: pageIconPicker.top, left: pageIconPicker.left }}>
+                  <div className="grid grid-cols-5 gap-1">
+                      {EMOJIS.slice(0, 200).map((emoji, i) => (
+                          <div key={i} className="text-xl cursor-pointer hover:bg-gray-100 p-1 rounded text-center" onClick={() => updatePageIcon(pageIconPicker.pageId, emoji)}>{emoji}</div>
+                      ))}
+                  </div>
+              </div>
+          )}
+
           {notification && <div className="fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded-full shadow-lg z-[10000] animate-bounce-in">{notification.message}</div>}
 
           {/* Add Drive URL Modal */}
@@ -7945,10 +7959,9 @@ html.dark .canvas-grid {
                           </button>
                           <button 
                               onClick={() => {
-                                  if (addGooglePageFromUrl(driveUrlModalValue)) {
-                                      setShowDriveUrlModal(false);
-                                      setDriveUrlModalValue('');
-                                  }
+                                  addGooglePageFromUrl(driveUrlModalValue).then(ok => {
+                                      if (ok) { setShowDriveUrlModal(false); setDriveUrlModalValue(''); }
+                                  });
                               }}
                               disabled={!driveUrlModalValue}
                               className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"

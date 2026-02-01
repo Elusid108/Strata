@@ -138,6 +138,7 @@ own project, please provide attribution by:
 
 ## Version History
 
+- **v2.7.3** - Fixed Drive URL pages appearing blank after reset: syncGooglePageLink now sets strata_pageType and strata_icon on Drive files; loadFromDriveStructure derives page type from JSON content when file properties are missing (fixes existing link files).
 - **v2.7.2** - strata_index.json as primary: removed manifest.json, strata_index stores Drive IDs for stable load; boot reads strata_index first, falls back to strata_structure then folder scan; sync improvements (error notifications, 2s debounce); createDriveShortcut/getDriveItem 404 handling; favicon; reconciler.js loaded.
 - **v2.7.1** - License attribution: NOTICE file, README License & Attribution section; todo checkbox fix (controlled checkbox, immediate data sync in editor).
 - **v2.6.8** - Removed /ul, /ol, /todo block types; block editor simplified for production use

@@ -17,7 +17,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.7.2";
+  const APP_VERSION = "2.7.3";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
