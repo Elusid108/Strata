@@ -17,7 +17,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.7.3";
+  const APP_VERSION = "2.8.0";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -794,9 +794,6 @@
       };
 
       const selectSlashCommand = (cmd) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:selectSlashCommand',message:'selectSlashCommand',data:{cmdType:cmd.type,domContentBefore:contentEditableRef.current?.innerHTML?.slice(0,80)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-          // #endregion
           setSlashMenu({ open: false, filter: '', selectedIndex: 0, position: { top: 0, left: 0 } });
           // Clear the contentEditable content before converting to ensure slash command text is removed
           if (contentEditableRef.current) {
@@ -973,9 +970,6 @@
     const rawPreview = typeof raw === 'string' ? raw.slice(0, 80) : raw;
     if (!raw || raw.trim() === '' || raw === '<br>') {
       const out = listType === 'todo' ? '<li data-checked="false"></li>' : '<li></li>';
-      // #region agent log
-      if (listType === 'ul' || listType === 'ol') fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:normalizeListContent',message:'normalizeListContent',data:{rawPreview,listType,result:'empty'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
       return out;
     }
     if (listType === 'todo') {
@@ -989,9 +983,6 @@
     }
     if (!raw.includes('<li>')) {
       const out = `<li>${raw}</li>`;
-      // #region agent log
-      if (listType === 'ul' || listType === 'ol') fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:normalizeListContent',message:'normalizeListContent wrap',data:{rawPreview,listType},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
       return out;
     }
     return raw;
@@ -1432,9 +1423,6 @@
           const listContent = (newType === 'ul' || newType === 'ol') ? '<li></li>' : (newType === 'todo' ? '<li data-checked="false"></li>' : null);
           const content = listContent !== null ? listContent : (isMedia ? '' : '');
           const updates = { type: newType, content, url: '' };
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handleConvert',message:'handleConvert',data:{blockId:block.id,newType,content,runId:'post-fix'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-          // #endregion
           onUpdate(block.id, updates);
           if (newType === 'divider') {
               onInsertAfter(block.id, 'text');
@@ -1474,7 +1462,7 @@
               case 'h2': return <ContentBlock tagName="h2" className="text-2xl font-bold mb-3 border-b border-gray-100 pb-1" {...props} placeholder="Heading 2" />;
               case 'h3': return <ContentBlock tagName="h3" className="text-xl font-bold mb-2" {...props} placeholder="Heading 3" />;
               case 'h4': return <ContentBlock tagName="h4" className="text-lg font-semibold mb-2 text-gray-600" {...props} placeholder="Heading 4" />;
-              case 'ul': (function(){ fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:renderTextContent ul',message:'render ListBlock ul',data:{blockId:block.id,contentPreview:block.content?.slice(0,80)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(function(){}); })(); return <ListBlock listType="ul" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
+              case 'ul': return <ListBlock listType="ul" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
               case 'ol': return <ListBlock listType="ol" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
               case 'todo': return <ListBlock listType="todo" {...props} onExitList={() => onInsertAfter(block.id, 'text')} onInsertBelow={() => onInsertAfter(block.id, 'text')} />;
               default: return <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" {...props} />;
@@ -3625,6 +3613,8 @@
     const [notebookIconPicker, setNotebookIconPicker] = useState(null); // { id, top, left }
     const [tabIconPicker, setTabIconPicker] = useState(null); // { id, top, left }
     const [pageIconPicker, setPageIconPicker] = useState(null); // { pageId, top, left }
+    const [dragHoverTarget, setDragHoverTarget] = useState(null); // { type: 'notebook'|'tab', id: string }
+    const dragHoverTimerRef = useRef(null);
     const titleInputRef = useRef(null);
     const [shouldFocusTitle, setShouldFocusTitle] = useState(false);
     const shouldFocusPageRef = useRef(false);
@@ -4395,9 +4385,6 @@
                 })
             }))
         }));
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handleUpdateBlock',message:'handleUpdateBlock',data:{blockId,updates,mergedContent:typeof mergedContent==='string'?mergedContent.slice(0,80):mergedContent},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
         setActivePageRows(newRows);
         scheduleSyncToData();
     }, []);
@@ -5599,6 +5586,14 @@
         setPageIconPicker(null);
     };
 
+    // Helper to clamp picker position within viewport
+    const getPickerPosition = (top, left, width = 256, height = 256) => {
+        return {
+            top: Math.max(0, Math.min(top, window.innerHeight - height)),
+            left: Math.max(0, Math.min(left, window.innerWidth - width))
+        };
+    };
+
     // Update local state only (for responsive typing) - NO Drive API calls
     const updateLocalName = (type, id, newName) => {
         setData(prev => {
@@ -5786,36 +5781,92 @@
     }
 
     const handleNavDragStart = (e, type, id, index) => {
-        e.dataTransfer.setData('nav_drag', JSON.stringify({ type, id, index }));
+        e.dataTransfer.setData('nav_drag', JSON.stringify({ 
+            type, 
+            id, 
+            index,
+            sourceNotebookId: activeNotebookId,
+            sourceTabId: activeTabId
+        }));
     };
 
     const handleNavDrop = (e, type, targetIndex) => {
         e.preventDefault(); e.stopPropagation();
+        
+        // Clear hover state
+        if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+        setDragHoverTarget(null);
+        
         const dragDataRaw = e.dataTransfer.getData('nav_drag');
         if (!dragDataRaw) return;
         const dragData = JSON.parse(dragDataRaw);
-        if (dragData.type !== type || dragData.index === targetIndex) return;
-
+        
         saveToHistory();
         const newData = JSON.parse(JSON.stringify(data));
+        
         if (type === 'notebook') {
+            // Notebook reordering (same as before)
+            if (dragData.type !== 'notebook' || dragData.index === targetIndex) return;
             const item = newData.notebooks.splice(dragData.index, 1)[0];
             newData.notebooks.splice(targetIndex, 0, item);
         } else if (type === 'tab') {
-            const nb = newData.notebooks.find(n => n.id === activeNotebookId);
-            if (nb) {
-                const item = nb.tabs.splice(dragData.index, 1)[0];
-                nb.tabs.splice(targetIndex, 0, item);
+            // Handle same-notebook reorder OR cross-notebook move
+            if (dragData.type !== 'tab') return;
+            
+            const sourceNb = newData.notebooks.find(n => n.id === dragData.sourceNotebookId);
+            const targetNb = newData.notebooks.find(n => n.id === activeNotebookId);
+            
+            if (sourceNb && targetNb) {
+                const [movedTab] = sourceNb.tabs.splice(dragData.index, 1);
+                targetNb.tabs.splice(targetIndex, 0, movedTab);
             }
         } else if (type === 'page') {
-            const nb = newData.notebooks.find(n => n.id === activeNotebookId);
-            const tab = nb?.tabs.find(t => t.id === activeTabId);
-            if (tab) {
-                const item = tab.pages.splice(dragData.index, 1)[0];
-                tab.pages.splice(targetIndex, 0, item);
+            // Handle same-tab reorder OR cross-tab/cross-notebook move
+            if (dragData.type !== 'page') return;
+            
+            const sourceNb = newData.notebooks.find(n => n.id === dragData.sourceNotebookId);
+            const sourceTab = sourceNb?.tabs.find(t => t.id === dragData.sourceTabId);
+            const targetNb = newData.notebooks.find(n => n.id === activeNotebookId);
+            const targetTab = targetNb?.tabs.find(t => t.id === activeTabId);
+            
+            if (sourceTab && targetTab) {
+                const [movedPage] = sourceTab.pages.splice(dragData.index, 1);
+                targetTab.pages.splice(targetIndex, 0, movedPage);
             }
         }
         setData(newData);
+    };
+
+    const handleDragEnterNotebook = (e, notebookId) => {
+        e.preventDefault();
+        if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+        
+        dragHoverTimerRef.current = setTimeout(() => {
+            selectNotebook(notebookId);
+        }, 1000);
+        
+        setDragHoverTarget({ type: 'notebook', id: notebookId });
+    };
+
+    const handleDragLeaveNotebook = () => {
+        if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+        setDragHoverTarget(null);
+    };
+
+    const handleDragEnterTab = (e, tabId) => {
+        e.preventDefault();
+        if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+        
+        dragHoverTimerRef.current = setTimeout(() => {
+            selectTab(tabId);
+        }, 1000);
+        
+        setDragHoverTarget({ type: 'tab', id: tabId });
+    };
+
+    const handleDragLeaveTab = () => {
+        if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+        setDragHoverTarget(null);
     };
 
     const handleDragStart = (e, block, rowId, colId) => {
@@ -6099,16 +6150,30 @@
             )}
             
             {data.notebooks.map((nb, index) => (
-              <div key={nb.id} className="group flex min-w-0 items-center gap-2 overflow-hidden" draggable={!editingNotebookId} onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleNavDrop(e, 'notebook', index)} title={settings.condensedView ? nb.name : undefined}>
+              <div 
+                  key={nb.id} 
+                  className={`group flex min-w-0 items-center gap-2 overflow-hidden ${dragHoverTarget?.type === 'notebook' && dragHoverTarget?.id === nb.id ? 'ring-2 ring-blue-400 rounded' : ''}`}
+                  draggable={!editingNotebookId} 
+                  onDragStart={(e) => handleNavDragStart(e, 'notebook', nb.id, index)} 
+                  onDragEnter={(e) => handleDragEnterNotebook(e, nb.id)}
+                  onDragLeave={handleDragLeaveNotebook}
+                  onDragOver={(e) => e.preventDefault()} 
+                  onDrop={(e) => handleNavDrop(e, 'notebook', index)} 
+                  title={settings.condensedView ? nb.name : undefined}
+              >
                    <div onClick={() => selectNotebook(nb.id)} className={`flex-1 min-w-0 flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} px-3 py-2 rounded cursor-pointer transition-all ${activeNotebookId === nb.id ? 'bg-gray-800 text-white font-medium border-l-2 border-l-blue-500' : 'hover:bg-gray-800 border-l-2 border-l-transparent'}`}>
                       <span 
                           className={`${settings.condensedView ? 'text-xl' : 'text-base'} ${activeNotebookId === nb.id && !settings.condensedView ? 'cursor-pointer hover:bg-gray-700' : ''} rounded px-0.5 notebook-icon-trigger`} 
-                          onClick={(e) => { 
+                          onClick={(e) => {
                               if (activeNotebookId !== nb.id) return; // Only active notebook
                               if (settings.condensedView) return; // Don't open picker in condensed view
                               e.stopPropagation(); 
                               const rect = e.currentTarget.getBoundingClientRect();
-                              setNotebookIconPicker({ id: nb.id, top: rect.bottom + 5, left: rect.left });
+                              const pos = getPickerPosition(rect.bottom + 5, rect.left);
+                              setNotebookIconPicker({ id: nb.id, top: pos.top, left: pos.left });
+                              setTabIconPicker(null);
+                              setPageIconPicker(null);
+                              setShowIconPicker(false);
                           }}
                       >
                           {nb.icon || '📓'}
@@ -6163,9 +6228,11 @@
                {activeNotebook.tabs.map((tab, index) => (
                  <div 
                      key={tab.id} 
-                     className="group relative flex-shrink-0" 
+                     className={`group relative flex-shrink-0 ${dragHoverTarget?.type === 'tab' && dragHoverTarget?.id === tab.id ? 'ring-2 ring-blue-400 rounded-t-lg' : ''}`}
                      draggable={!editingTabId} 
                      onDragStart={(e) => handleNavDragStart(e, 'tab', tab.id, index)} 
+                     onDragEnter={(e) => handleDragEnterTab(e, tab.id)}
+                     onDragLeave={handleDragLeaveTab}
                      onDragOver={(e) => e.preventDefault()} 
                      onDrop={(e) => handleNavDrop(e, 'tab', index)}
                  >
@@ -6181,7 +6248,11 @@
                               if (settings.condensedView) return;
                               e.stopPropagation(); 
                               const rect = e.currentTarget.getBoundingClientRect();
-                              setTabIconPicker({ id: tab.id, top: rect.bottom + 5, left: rect.left });
+                              const pos = getPickerPosition(rect.bottom + 5, rect.left);
+                              setTabIconPicker({ id: tab.id, top: pos.top, left: pos.left });
+                              setNotebookIconPicker(null);
+                              setPageIconPicker(null);
+                              setShowIconPicker(false);
                           }}
                       >
                           {tab.icon || '📋'}
@@ -6321,16 +6392,23 @@
                                   <div className="relative inline-block">
                                       <span 
                                           className="text-2xl cursor-pointer hover:opacity-80 icon-picker-trigger select-none"
-                                          onClick={() => setShowIconPicker(!showIconPicker)}
+                                          onClick={() => {
+                                              setShowIconPicker(!showIconPicker);
+                                              setNotebookIconPicker(null);
+                                              setTabIconPicker(null);
+                                              setPageIconPicker(null);
+                                          }}
                                           title="Change icon"
                                       >{activePage.icon || '📄'}</span>
                                       {showIconPicker && (
-                                          <div className="absolute top-full left-0 z-50 bg-white border border-gray-200 shadow-xl rounded-lg p-2 w-64 h-64 overflow-y-auto icon-picker animate-fade-in mt-1">
-                                              <div className="grid grid-cols-5 gap-1">
-                                                  {EMOJIS.map(emoji => (
-                                                      <div key={emoji} className="text-2xl cursor-pointer hover:bg-gray-100 p-1 rounded text-center" onClick={() => { updatePageMeta({ icon: emoji }); setShowIconPicker(false); }}>{emoji}</div>
-                                                  ))}
-                                              </div>
+                                          <div className="absolute top-full left-0 z-50 bg-white border border-gray-200 shadow-xl rounded-lg p-2 icon-picker animate-fade-in mt-1">
+                                              <EmojiMart.Picker 
+                                                  data={EmojiMart.data} 
+                                                  onEmojiSelect={(emoji) => { updatePageMeta({ icon: emoji.native }); setShowIconPicker(false); }}
+                                                  theme="light"
+                                                  previewPosition="none"
+                                                  skinTonePosition="none"
+                                              />
                                           </div>
                                       )}
                                   </div>
@@ -6552,17 +6630,24 @@
                                   <div className="relative inline-block">
                                       <div 
                                           className="text-6xl drop-shadow-sm select-none cursor-pointer hover:bg-gray-100/50 rounded p-2 transition-colors icon-picker-trigger"
-                                          onClick={() => setShowIconPicker(!showIconPicker)}
+                                          onClick={() => {
+                                              setShowIconPicker(!showIconPicker);
+                                              setNotebookIconPicker(null);
+                                              setTabIconPicker(null);
+                                              setPageIconPicker(null);
+                                          }}
                                       >
                                           {activePage.icon || '📄'}
                                       </div>
                                       {showIconPicker && (
-                                          <div className="absolute top-full left-0 z-50 bg-white border border-gray-200 shadow-xl rounded-lg p-2 w-64 h-64 overflow-y-auto icon-picker animate-fade-in">
-                                              <div className="grid grid-cols-5 gap-1">
-                                                  {EMOJIS.map(emoji => (
-                                                      <div key={emoji} className="text-2xl cursor-pointer hover:bg-gray-100 p-1 rounded text-center" onClick={() => { updatePageMeta({ icon: emoji }); setShowIconPicker(false); }}>{emoji}</div>
-                                                  ))}
-                                              </div>
+                                          <div className="absolute top-full left-0 z-50 bg-white border border-gray-200 shadow-xl rounded-lg p-2 icon-picker animate-fade-in">
+                                              <EmojiMart.Picker 
+                                                  data={EmojiMart.data} 
+                                                  onEmojiSelect={(emoji) => { updatePageMeta({ icon: emoji.native }); setShowIconPicker(false); }}
+                                                  theme="light"
+                                                  previewPosition="none"
+                                                  skinTonePosition="none"
+                                              />
                                           </div>
                                       )}
                                   </div>
@@ -6743,7 +6828,15 @@
                                   title={settings.condensedView ? page.name : undefined}>
                                   <span 
                                       className={`${settings.condensedView ? 'text-xl' : 'mr-1 flex-shrink-0'} cursor-pointer hover:opacity-80 page-icon-trigger`}
-                                      onClick={(e) => { e.stopPropagation(); setPageIconPicker(pageIconPicker?.pageId === page.id ? null : { pageId: page.id, top: e.clientY, left: e.clientX }); }}
+                                      onClick={(e) => { 
+                                          e.stopPropagation(); 
+                                          if (activePageId !== page.id) return; // Only active page
+                                          const pos = getPickerPosition(e.clientY, e.clientX);
+                                          setPageIconPicker(pageIconPicker?.pageId === page.id ? null : { pageId: page.id, top: pos.top, left: pos.left }); 
+                                          setNotebookIconPicker(null);
+                                          setTabIconPicker(null);
+                                          setShowIconPicker(false);
+                                      }}
                                       title="Change icon"
                                   >{page.icon || '📄'}</span>
                                   {!settings.condensedView && (activePageId === page.id && editingPageId === page.id ? (
@@ -6803,32 +6896,38 @@
           })()}
 
           {notebookIconPicker && (
-              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] notebook-icon-picker animate-fade-in w-64 h-64 overflow-y-auto" style={{ top: notebookIconPicker.top, left: notebookIconPicker.left }}>
-                  <div className="grid grid-cols-5 gap-1">
-                      {EMOJIS.slice(0, 200).map((emoji, i) => (
-                          <div key={i} className="text-xl cursor-pointer hover:bg-gray-100 p-1 rounded text-center" onClick={() => updateNotebookIcon(notebookIconPicker.id, emoji)}>{emoji}</div>
-                      ))}
-                  </div>
+              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] notebook-icon-picker animate-fade-in" style={{ top: notebookIconPicker.top, left: notebookIconPicker.left }}>
+                  <EmojiMart.Picker 
+                      data={EmojiMart.data} 
+                      onEmojiSelect={(emoji) => updateNotebookIcon(notebookIconPicker.id, emoji.native)}
+                      theme="light"
+                      previewPosition="none"
+                      skinTonePosition="none"
+                  />
               </div>
           )}
 
           {tabIconPicker && (
-              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] tab-icon-picker animate-fade-in w-64 h-64 overflow-y-auto" style={{ top: tabIconPicker.top, left: tabIconPicker.left }}>
-                  <div className="grid grid-cols-5 gap-1">
-                      {EMOJIS.slice(0, 200).map((emoji, i) => (
-                          <div key={i} className="text-xl cursor-pointer hover:bg-gray-100 p-1 rounded text-center" onClick={() => updateTabIcon(tabIconPicker.id, emoji)}>{emoji}</div>
-                      ))}
-                  </div>
+              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] tab-icon-picker animate-fade-in" style={{ top: tabIconPicker.top, left: tabIconPicker.left }}>
+                  <EmojiMart.Picker 
+                      data={EmojiMart.data} 
+                      onEmojiSelect={(emoji) => updateTabIcon(tabIconPicker.id, emoji.native)}
+                      theme="light"
+                      previewPosition="none"
+                      skinTonePosition="none"
+                  />
               </div>
           )}
 
           {pageIconPicker && (
-              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] page-icon-picker animate-fade-in w-64 h-64 overflow-y-auto" style={{ top: pageIconPicker.top, left: pageIconPicker.left }}>
-                  <div className="grid grid-cols-5 gap-1">
-                      {EMOJIS.slice(0, 200).map((emoji, i) => (
-                          <div key={i} className="text-xl cursor-pointer hover:bg-gray-100 p-1 rounded text-center" onClick={() => updatePageIcon(pageIconPicker.pageId, emoji)}>{emoji}</div>
-                      ))}
-                  </div>
+              <div className="fixed bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[9999] page-icon-picker animate-fade-in" style={{ top: pageIconPicker.top, left: pageIconPicker.left }}>
+                  <EmojiMart.Picker 
+                      data={EmojiMart.data} 
+                      onEmojiSelect={(emoji) => updatePageIcon(pageIconPicker.pageId, emoji.native)}
+                      theme="light"
+                      previewPosition="none"
+                      skinTonePosition="none"
+                  />
               </div>
           )}
 
