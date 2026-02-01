@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 Christopher Moore
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 // Google API Helper Module for Strata
 // Handles authentication, Drive API operations, and Picker integration
 
@@ -1240,12 +1256,13 @@ const savePageFile = async (page, tabFolderId) => {
         await ensureAuthenticated();
         
         const fileName = sanitizeFileName(page.name) + '.json';
+        const contentToSave = (page.content && page.content.version === TREE_VER) ? page.content : (page.rows || page.content);
         const pageContent = {
             type: page.type || 'block',
             name: page.name,
             icon: page.icon,
             cover: page.cover,
-            content: page.rows || page.content,
+            content: contentToSave,
             googleFileId: page.googleFileId,
             url: page.url,
             createdAt: page.createdAt,
@@ -1966,8 +1983,14 @@ const loadFromDriveStructure = async (rootFolderId) => {
                     
                     const pageType = page.type;
                     page.name = pageContent.name || page.name;
-                    page.rows = pageContent.content || pageContent.rows || [];
-                    page.content = pageContent.content || pageContent.rows || [];
+                    const raw = pageContent.content || pageContent.rows || [];
+                    if (raw && raw.version === TREE_VER && Array.isArray(raw.children)) {
+                        page.content = raw;
+                        page.rows = apiTreeToRows(raw);
+                    } else {
+                        page.content = raw;
+                        page.rows = Array.isArray(raw) ? raw : [];
+                    }
                     page.cover = pageContent.cover;
                     page.googleFileId = pageContent.googleFileId;
                     page.url = pageContent.url;
@@ -2112,12 +2135,56 @@ const stripHtml = (html) => {
     return html.replace(/<[^>]*>/g, '');
 };
 
-// Helper: Convert block content to Google Docs API requests
-const convertBlocksToDocsRequests = (rows) => {
+// Tree version marker (shared with index.html - do not redeclare TREE_VERSION here)
+const TREE_VER = 2;
+
+// Convert tree { version, children } to legacy rows[] for Docs API (scoped to avoid global conflict)
+const apiTreeToRows = (tree) => {
+    if (!tree || !tree.children) return [];
+    const rows = [];
+    for (const node of tree.children) {
+        if (node.type === 'row') {
+            const cols = node.children || [];
+            const colCount = cols.length || 1;
+            rows.push({
+                id: node.id,
+                columns: cols.map(col => ({
+                    id: col.id,
+                    width: col.width ?? (1 / colCount),
+                    blocks: (col.children || []).filter(b => b && b.type !== 'row' && b.type !== 'column')
+                }))
+            });
+        } else if (node.type === 'column') {
+            rows.push({
+                id: 'row-' + (node.id || Date.now()),
+                columns: [{ id: node.id, width: node.width ?? 1, blocks: (node.children || []).filter(b => b && b.type !== 'row' && b.type !== 'column') }]
+            });
+        } else {
+            rows.push({
+                id: 'row-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+                columns: [{ id: 'col-' + Date.now(), blocks: [node] }]
+            });
+        }
+    }
+    return rows;
+};
+
+// Normalize page content to rows for Docs API
+const toRowsForDocs = (content) => {
+    if (!content) return [];
+    if (content.version === TREE_VER && Array.isArray(content.children)) return apiTreeToRows(content);
+    if (Array.isArray(content)) return content;
+    if (content.rows && Array.isArray(content.rows)) return content.rows;
+    return [];
+};
+
+// Helper: Convert block content to Google Docs API requests (accepts tree or rows)
+const convertBlocksToDocsRequests = (rowsOrTree) => {
+    const rows = Array.isArray(rowsOrTree) ? rowsOrTree : toRowsForDocs(rowsOrTree);
     const requests = [];
     let currentIndex = 1; // Google Docs starts at index 1
     
-    if (!rows || !Array.isArray(rows)) return requests;
+    if (!rows || !Array.isArray(rows) || rows.length === 0) return requests;
     
     for (const row of rows) {
         if (!row.columns) continue;
@@ -2335,7 +2402,7 @@ const createGoogleDocForPage = async (page, tabFolderId) => {
         const docId = doc.documentId;
         
         // Step 2: Convert blocks to Docs API requests and update the document
-        const requests = convertBlocksToDocsRequests(page.rows);
+        const requests = convertBlocksToDocsRequests(page.content || page.rows);
         
         if (requests.length > 0) {
             const updateResponse = await fetch(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
@@ -2409,7 +2476,7 @@ const updateGoogleDoc = async (docId, page) => {
         }
         
         // Add new content
-        const contentRequests = convertBlocksToDocsRequests(page.rows);
+        const contentRequests = convertBlocksToDocsRequests(page.content || page.rows);
         requests.push(...contentRequests);
         
         if (requests.length > 0) {

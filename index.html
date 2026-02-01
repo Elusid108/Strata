@@ -104,7 +104,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.7.0";
+  const APP_VERSION = "2.7.1";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -143,6 +143,10 @@ html.dark .canvas-grid {
         .block-ul, .block-ol { padding-left: 24px; }
         .block-todo { display: flex; align-items: center; gap: 8px; }
         .block-todo input { width: 18px; height: 18px; }
+        .block-todo-view { display: flex; flex-direction: column; gap: 6px; }
+        .block-todo-view .block-todo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; cursor: pointer; }
+        .block-todo-view .block-todo-row input { width: 18px; height: 18px; flex-shrink: 0; }
+        .block-todo-view .block-todo-row input:checked + .block-todo-text { text-decoration: line-through; color: #9ca3af; }
         .block-divider { border-top: 1px solid #e5e7eb; margin: 16px 0; }
         .block-image img { max-width: 100%; border-radius: 8px; }
         .block-link a { color: #3b82f6; text-decoration: none; }
@@ -414,7 +418,18 @@ html.dark .canvas-grid {
                     case 'h4': return '<div class="block block-h4">' + c + '</div>';
                     case 'ul': return '<div class="block block-ul"><ul>' + c + '</ul></div>';
                     case 'ol': return '<div class="block block-ol"><ol>' + c + '</ol></div>';
-                    case 'todo': return '<div class="block block-todo"><ul>' + c + '</ul></div>';
+                    case 'todo': (function() {
+                        const div = document.createElement('div');
+                        div.innerHTML = c || '<li data-checked="false"></li>';
+                        const lis = div.querySelectorAll('li');
+                        let rows = '';
+                        lis.forEach(function(li) {
+                            const checked = li.getAttribute('data-checked') === 'true';
+                            const itemHtml = (li.innerHTML || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            rows += '<label class="block-todo-row"><input type="checkbox" ' + (checked ? 'checked ' : '') + '/><span class="block-todo-text">' + itemHtml + '</span></label>';
+                        });
+                        return '<div class="block block-todo block-todo-view">' + (rows || '<label class="block-todo-row"><input type="checkbox" /><span class="block-todo-text"></span></label>') + '</div>';
+                    })();
                     case 'divider': return '<div class="block-divider"></div>';
                     case 'image': return block.url ? '<div class="block block-image"><img src="' + block.url + '" alt=""></div>' : '';
                     case 'video': return block.url ? '<div class="block block-video"><iframe src="https://www.youtube.com/embed/' + getYouTubeId(block.url) + '" allowfullscreen></iframe></div>' : '';
@@ -432,7 +447,13 @@ html.dark .canvas-grid {
                 html += renderBlocks(content);
             }
             html += '</div>';
-            document.getElementById('content').innerHTML = html;
+            const contentEl = document.getElementById('content');
+            contentEl.innerHTML = html;
+            contentEl.addEventListener('change', function(e) {
+                if (e.target.matches('.block-todo-view input[type="checkbox"]')) {
+                    e.stopPropagation();
+                }
+            });
         }
 
         // Start
@@ -2133,19 +2154,12 @@ html.dark .canvas-grid {
       };
 
       const handleTodoCheck = (idx) => {
-        const container = todoContainerRef.current;
-        if (!container) return;
-        const rows = container.querySelectorAll('.todo-row');
-        const row = rows[idx];
-        if (row) {
-          const cb = row.querySelector('input[type="checkbox"]');
-          if (cb) {
-            cb.checked = !cb.checked;
-            const serialized = serializeTodoItems(container);
-            todoLastSerializedRef.current = serialized;
-            onChange(serialized);
-          }
-        }
+        const parsed = parseTodoItems(safeHtml);
+        if (idx < 0 || idx >= parsed.length) return;
+        const newParsed = parsed.map((item, i) => ({ ...item, checked: i === idx ? !item.checked : item.checked }));
+        const serialized = newParsed.map(item => '<li data-checked="' + item.checked + '">' + (item.html || '') + '</li>').join('') || '<li data-checked="false"></li>';
+        todoLastSerializedRef.current = serialized;
+        onChange(serialized);
       };
 
       useLayoutEffect(() => {
@@ -2177,8 +2191,8 @@ html.dark .canvas-grid {
                 type="checkbox"
                 className="flex-shrink-0 w-5 h-5 rounded border-2 border-gray-400 cursor-pointer"
                 tabIndex={-1}
-                defaultChecked={item.checked}
-                onClick={(e) => { e.preventDefault(); handleTodoCheck(idx); }}
+                checked={item.checked}
+                onChange={() => handleTodoCheck(idx)}
               />
               <div
                 ref={idx === 0 ? todoFirstContentRef : undefined}
@@ -5356,7 +5370,14 @@ html.dark .canvas-grid {
     const handleUpdateBlock = useCallback((blockId, updates) => {
         const tree = activePageRowsRef.current;
         if (!tree || tree.version !== TREE_VERSION) return;
-        setActivePageRows(updateBlockInTree(tree, blockId, updates));
+        const newTree = updateBlockInTree(tree, blockId, updates);
+        setActivePageRows(newTree);
+        const { notebookId, tabId, pageId } = activeIdsRef.current;
+        if (notebookId && tabId && pageId) {
+            const d = dataRef.current;
+            if (d) setData(updatePageInData(d, { notebookId, tabId, pageId }, p => ({ ...p, content: newTree, rows: treeToRows(newTree) })));
+        }
+        if (syncContentDebounceRef.current) { clearTimeout(syncContentDebounceRef.current); syncContentDebounceRef.current = null; }
         scheduleSyncToData();
     }, []);
 

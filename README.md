@@ -123,8 +123,22 @@ If not signed in, app uses `localStorage`:
 - **Babel in Browser**: For production, consider a build step to pre-compile JSX
 - **OAuth Origins**: Must configure allowed origins in Google Cloud Console
 
+## License & Attribution
+
+This project is licensed under the **Apache License 2.0**.
+
+### Giving Credit
+
+I put a lot of work into my open-source projects! If you use this code in your 
+own project, please provide attribution by:
+
+1. Keeping the `NOTICE` file intact in your repository.
+2. Linking back to [chrismooredesigns.com](https://chrismooredesigns.com) or 
+   my GitHub profile if the project is displayed publicly.
+
 ## Version History
 
+- **v2.7.1** - License attribution: NOTICE file, README License & Attribution section; todo checkbox fix (controlled checkbox, immediate data sync in editor).
 - **v2.6.8** - Removed /ul, /ol, /todo block types; block editor simplified for production use
 - **v2.6.7** - Keyboard nav: Ctrl+Left/Right cycle tabs, Ctrl+Alt+Up/Down cycle notebooks
 - **v2.6.6** - Keyboard nav fixes: Ctrl+Up/Down no longer skips two pages (page-div handler ignores Ctrl), fixed crash when navigating to last page (rowsForEditor Array.isArray guard)

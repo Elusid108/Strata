@@ -1,7 +1,23 @@
+/*
+ * Copyright 2026 Christopher Moore
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.7.0";
+  const APP_VERSION = "2.7.1";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -40,6 +56,10 @@
         .block-ul, .block-ol { padding-left: 24px; }
         .block-todo { display: flex; align-items: center; gap: 8px; }
         .block-todo input { width: 18px; height: 18px; }
+        .block-todo-view { display: flex; flex-direction: column; gap: 6px; }
+        .block-todo-view .block-todo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; cursor: pointer; }
+        .block-todo-view .block-todo-row input { width: 18px; height: 18px; flex-shrink: 0; }
+        .block-todo-view .block-todo-row input:checked + .block-todo-text { text-decoration: line-through; color: #9ca3af; }
         .block-divider { border-top: 1px solid #e5e7eb; margin: 16px 0; }
         .block-image img { max-width: 100%; border-radius: 8px; }
         .block-link a { color: #3b82f6; text-decoration: none; }
@@ -395,7 +415,18 @@
                     case 'h4': return '<div class="block block-h4">' + c + '</div>';
                     case 'ul': return '<div class="block block-ul"><ul>' + c + '</ul></div>';
                     case 'ol': return '<div class="block block-ol"><ol>' + c + '</ol></div>';
-                    case 'todo': return '<div class="block block-todo"><ul>' + c + '</ul></div>';
+                    case 'todo': (function() {
+                        const div = document.createElement('div');
+                        div.innerHTML = c || '<li data-checked="false"></li>';
+                        const lis = div.querySelectorAll('li');
+                        let rows = '';
+                        lis.forEach(function(li) {
+                            const checked = li.getAttribute('data-checked') === 'true';
+                            const itemHtml = (li.innerHTML || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            rows += '<label class="block-todo-row"><input type="checkbox" ' + (checked ? 'checked ' : '') + '/><span class="block-todo-text">' + itemHtml + '</span></label>';
+                        });
+                        return '<div class="block block-todo block-todo-view">' + (rows || '<label class="block-todo-row"><input type="checkbox" /><span class="block-todo-text"></span></label>') + '</div>';
+                    })();
                     case 'divider': return '<div class="block-divider"></div>';
                     case 'image': return block.url ? '<div class="block block-image"><img src="' + block.url + '" alt=""></div>' : '';
                     case 'video': return block.url ? '<div class="block block-video"><iframe src="https://www.youtube.com/embed/' + getYouTubeId(block.url) + '" allowfullscreen></iframe></div>' : '';
@@ -413,7 +444,13 @@
                 html += renderBlocks(content);
             }
             html += '</div>';
-            document.getElementById('content').innerHTML = html;
+            const contentEl = document.getElementById('content');
+            contentEl.innerHTML = html;
+            contentEl.addEventListener('change', function(e) {
+                if (e.target.matches('.block-todo-view input[type="checkbox"]')) {
+                    e.stopPropagation();
+                }
+            });
         }
 
         // Start
