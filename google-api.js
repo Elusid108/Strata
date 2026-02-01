@@ -2507,7 +2507,7 @@ const updateGoogleDoc = async (docId, page) => {
     }
 };
 
-// Create a Google Drive shortcut to an existing file
+// Create a Google Drive shortcut to an existing file. Returns null on 404 (file not found).
 const createDriveShortcut = async (name, targetFileId, parentFolderId) => {
     try {
         await ensureAuthenticated();
@@ -2528,6 +2528,8 @@ const createDriveShortcut = async (name, targetFileId, parentFolderId) => {
         
         return response.result;
     } catch (error) {
+        const status = error?.result?.error?.code || error?.status;
+        if (status === 404) return null;
         console.error('Error creating Drive shortcut:', error);
         throw error;
     }
@@ -2551,7 +2553,7 @@ const updateDriveShortcut = async (shortcutId, newName) => {
     }
 };
 
-// Get a Drive item's metadata
+// Get a Drive item's metadata. Returns null on 404 (not found or no access).
 const getDriveItem = async (itemId) => {
     try {
         await ensureAuthenticated();
@@ -2563,6 +2565,8 @@ const getDriveItem = async (itemId) => {
         
         return response.result;
     } catch (error) {
+        const status = error?.result?.error?.code || error?.status;
+        if (status === 404) return null;
         console.error('Error getting Drive item:', error);
         throw error;
     }
