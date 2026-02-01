@@ -37,7 +37,7 @@ Note: index.html is self-contained (inline app + styles). app.js and styles.css 
 ## Features
 
 - **Notebooks, Tabs, and Pages** - Organize your notes hierarchically
-- **Block-based editor** - Headings, lists, todos, images, videos, links, dividers
+- **Block-based editor** - Headings, images, videos, links, dividers
 - **Slash commands** - Type `/` to quickly insert block types
 - **Drag and drop** - Reorder blocks with visual indicators
 - **Dark mode** - Full dark mode support with system preference or manual toggle
@@ -125,6 +125,7 @@ If not signed in, app uses `localStorage`:
 
 ## Version History
 
+- **v2.6.8** - Removed /ul, /ol, /todo block types; block editor simplified for production use
 - **v2.6.7** - Keyboard nav: Ctrl+Left/Right cycle tabs, Ctrl+Alt+Up/Down cycle notebooks
 - **v2.6.6** - Keyboard nav fixes: Ctrl+Up/Down no longer skips two pages (page-div handler ignores Ctrl), fixed crash when navigating to last page (rowsForEditor Array.isArray guard)
 - **v2.6.5** - Keyboard navigation: Ctrl+Up/Down to cycle pages (replacing Ctrl+Tab), Ctrl+1-0 for tabs, Ctrl+Alt+1-0 for notebooks

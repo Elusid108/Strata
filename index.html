@@ -104,7 +104,7 @@ html.dark .canvas-grid {
     <script type="text/babel">  const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.7";
+  const APP_VERSION = "2.6.8";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -370,14 +370,35 @@ html.dark .canvas-grid {
             let html = '<div class="page-content">';
             html += '<h1 class="page-title"><span>' + (pageMeta.icon || '📄') + '</span> ' + pageMeta.name + '</h1>';
             
+            function treeToRows(tree) {
+                if (!tree || !tree.children) return [];
+                var rows = [];
+                for (var i = 0; i < tree.children.length; i++) {
+                    var n = tree.children[i];
+                    if (n.type === 'row') {
+                        var cols = n.children || [];
+                        rows.push({ id: n.id, columns: cols.map(function(c){ return { id: c.id, width: c.width, blocks: (c.children || []).filter(function(b){ return b && b.type !== 'row' && b.type !== 'column'; }); }; }) });
+                    } else if (n.type === 'column') {
+                        rows.push({ id: 'r-' + n.id, columns: [{ id: n.id, blocks: (n.children || []).filter(function(b){ return b && b.type !== 'row' && b.type !== 'column'; }) }] });
+                    } else {
+                        rows.push({ id: 'r-' + Date.now(), columns: [{ id: 'c-' + Date.now(), blocks: [n] }] });
+                    }
+                }
+                return rows;
+            }
+            
             function renderBlocks(rows) {
-                let blocksHtml = '';
-                for (const row of rows) {
+                var blocksHtml = '';
+                if (rows && rows.version === 2 && rows.children) rows = treeToRows(rows);
+                if (!Array.isArray(rows)) return blocksHtml;
+                for (var ri = 0; ri < rows.length; ri++) {
+                    var row = rows[ri];
                     if (!row.columns) continue;
-                    for (const col of row.columns) {
+                    for (var ci = 0; ci < row.columns.length; ci++) {
+                        var col = row.columns[ci];
                         if (!col.blocks) continue;
-                        for (const block of col.blocks) {
-                            blocksHtml += renderBlock(block);
+                        for (var bi = 0; bi < col.blocks.length; bi++) {
+                            blocksHtml += renderBlock(col.blocks[bi]);
                         }
                     }
                 }
@@ -391,9 +412,6 @@ html.dark .canvas-grid {
                     case 'h2': return '<div class="block block-h2">' + c + '</div>';
                     case 'h3': return '<div class="block block-h3">' + c + '</div>';
                     case 'h4': return '<div class="block block-h4">' + c + '</div>';
-                    case 'ul': return '<ul class="block block-ul"><li>' + c + '</li></ul>';
-                    case 'ol': return '<ol class="block block-ol"><li>' + c + '</li></ol>';
-                    case 'todo': return '<div class="block block-todo"><input type="checkbox" ' + (block.checked ? 'checked' : '') + ' disabled> <span>' + c + '</span></div>';
                     case 'divider': return '<div class="block-divider"></div>';
                     case 'image': return block.url ? '<div class="block block-image"><img src="' + block.url + '" alt=""></div>' : '';
                     case 'video': return block.url ? '<div class="block block-video"><iframe src="https://www.youtube.com/embed/' + getYouTubeId(block.url) + '" allowfullscreen></iframe></div>' : '';
@@ -407,7 +425,7 @@ html.dark .canvas-grid {
                 return match ? match[1] : '';
             }
 
-            if (Array.isArray(content)) {
+            if (content && (content.version === 2 && content.children || Array.isArray(content))) {
                 html += renderBlocks(content);
             }
             html += '</div>';
@@ -1032,9 +1050,6 @@ html.dark .canvas-grid {
     { cmd: 'h2', aliases: ['h2', 'header2', 'heading2'], label: 'Heading 2', desc: 'Medium section heading', type: 'h2' },
     { cmd: 'h3', aliases: ['h3', 'header3', 'heading3'], label: 'Heading 3', desc: 'Small section heading', type: 'h3' },
     { cmd: 'h4', aliases: ['h4', 'header4', 'heading4'], label: 'Heading 4', desc: 'Tiny section heading', type: 'h4' },
-    { cmd: 'ul', aliases: ['ul', 'list', 'bullet', 'bullets'], label: 'Bullet List', desc: 'Unordered list', type: 'ul' },
-    { cmd: 'ol', aliases: ['ol', 'num', 'ordered', 'numbered'], label: 'Numbered List', desc: 'Ordered list', type: 'ol' },
-    { cmd: 'todo', aliases: ['todo', 'check', 'task', 'checkbox'], label: 'To-do', desc: 'Checkbox item', type: 'todo' },
     { cmd: 'img', aliases: ['img', 'image', 'pic', 'picture'], label: 'Image', desc: 'Embed an image', type: 'image' },
     { cmd: 'vid', aliases: ['vid', 'video', 'youtube'], label: 'Video', desc: 'Embed YouTube video', type: 'video' },
     { cmd: 'link', aliases: ['link', 'url', 'bookmark'], label: 'Link', desc: 'Web bookmark', type: 'link' },
@@ -1113,6 +1128,362 @@ html.dark .canvas-grid {
       }
   };
 
+  /** Tree migration: version marker for Notion-style tree format */
+  const TREE_VERSION = 2;
+
+  /** Convert legacy rows[] to tree { version: 2, children }. */
+  const rowsToTree = (rows) => {
+      if (!rows || !Array.isArray(rows)) return { version: TREE_VERSION, children: [] };
+      const children = rows.map(row => ({
+          type: 'row',
+          id: row.id || 'row-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+          children: (row.columns || []).map(col => ({
+              type: 'column',
+              id: col.id || 'col-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+              width: col.width ?? (1 / (row.columns?.length || 1)),
+              children: (col.blocks || []).map(b => ({ ...b }))
+          }))
+      }));
+      return { version: TREE_VERSION, children };
+  };
+
+  /** Convert tree { version, children } to legacy rows[] for Docs API and backward compat. */
+  const treeToRows = (tree) => {
+      if (!tree || !tree.children) return [];
+      const rows = [];
+      for (const node of tree.children) {
+          if (node.type === 'row') {
+              const cols = node.children || [];
+              const colCount = cols.length || 1;
+              rows.push({
+                  id: node.id,
+                  columns: cols.map(col => ({
+                      id: col.id,
+                      width: col.width ?? (1 / colCount),
+                      blocks: (col.children || []).filter(b => b && b.type !== 'row' && b.type !== 'column')
+                  }))
+              });
+          } else if (node.type === 'column') {
+              rows.push({
+                  id: 'row-' + (node.id || 'c' + Date.now()),
+                  columns: [{ id: node.id, width: node.width ?? 1, blocks: (node.children || []).filter(b => b && b.type !== 'row' && b.type !== 'column') }]
+              });
+          } else {
+              const blockId = node.id || 'b' + Date.now();
+              rows.push({
+                  id: 'row-' + blockId,
+                  columns: [{ id: 'col-' + blockId, blocks: [node] }]
+              });
+          }
+      }
+      return rows;
+  };
+
+  /** Normalize page content: if legacy rows, convert to tree; if tree, use as-is. */
+  const normalizePageContent = (page) => {
+      if (!page) return null;
+      const content = page.content || page;
+      if (content && content.version === TREE_VERSION && Array.isArray(content.children)) {
+          return content;
+      }
+      const rows = page.rows || content?.rows || (Array.isArray(content) ? content : []);
+      if (Array.isArray(rows) && rows.length >= 0) {
+          return rowsToTree(rows);
+      }
+      return { version: TREE_VERSION, children: [] };
+  };
+
+  /** Find block by id in tree. Returns { block, path, parent } where path is [rowId?, colId?]. */
+  const findBlockInTree = (tree, blockId) => {
+      if (!tree || !tree.children) return null;
+      const walk = (nodes, path) => {
+          for (let i = 0; i < nodes.length; i++) {
+              const n = nodes[i];
+              if (n.id === blockId && n.type !== 'row' && n.type !== 'column') return { block: n, path: [...path], parent: nodes };
+              if (n.type === 'row') {
+                  for (let j = 0; j < (n.children || []).length; j++) {
+                      const col = n.children[j];
+                      if (col.type === 'column') {
+                          const idx = (col.children || []).findIndex(b => b && b.id === blockId);
+                          if (idx >= 0) return { block: col.children[idx], path: [...path, n.id, col.id], parent: col.children };
+                          for (const c of (col.children || [])) {
+                              if (c.type === 'row' || c.type === 'column') {
+                                  const found = walk([c], [...path, n.id, col.id]);
+                                  if (found) return found;
+                              }
+                          }
+                      }
+                  }
+              } else if (n.type === 'column') {
+                  const idx = (n.children || []).findIndex(b => b && b.id === blockId);
+                  if (idx >= 0) return { block: n.children[idx], path: [...path, n.id], parent: n.children };
+              }
+          }
+          return null;
+      };
+      for (const n of tree.children) {
+          if (n.type === 'row') {
+              for (const col of (n.children || [])) {
+                  if (col.type === 'column') {
+                      const idx = (col.children || []).findIndex(b => b && b.id === blockId);
+                      if (idx >= 0) return { block: col.children[idx], path: [n.id, col.id], parent: col.children };
+                  }
+              }
+          } else if (n.type === 'column') {
+              const idx = (n.children || []).findIndex(b => b && b.id === blockId);
+              if (idx >= 0) return { block: n.children[idx], path: [n.id], parent: n.children };
+          } else if (n.id === blockId) {
+              return { block: n, path: [], parent: tree.children };
+          }
+      }
+      return null;
+  };
+
+  /** Remove block from tree by id. Returns new tree. */
+  const removeBlockFromTree = (tree, blockId) => {
+      if (!tree || !tree.children) return tree;
+      const prune = (nodes) => {
+          const out = [];
+          for (const n of nodes) {
+              if (n.type === 'row') {
+                  const cols = (n.children || []).map(col => ({ ...col, children: prune(col.children || []) })).filter(col => (col.children || []).length > 0);
+                  if (cols.length) out.push({ ...n, children: cols });
+              } else if (n.type === 'column') {
+                  const kids = prune(n.children || []).filter(b => b.id !== blockId);
+                  out.push({ ...n, children: kids });
+              } else if (n.id !== blockId) out.push(n);
+          }
+          return out;
+      };
+      return { ...tree, children: prune(tree.children) };
+  };
+
+  /** Update block in tree. Returns new tree. */
+  const updateBlockInTree = (tree, blockId, updates) => {
+      if (!tree || !tree.children) return tree;
+      const mapNodes = (nodes) => nodes.map(n => {
+          if (n.type === 'row') return { ...n, children: (n.children || []).map(c => c.type === 'column' ? { ...c, children: mapNodes(c.children || []) } : c) };
+          if (n.type === 'column') return { ...n, children: mapNodes(n.children || []) };
+          return n.id === blockId ? { ...n, ...updates } : n;
+      });
+      return { ...tree, children: mapNodes(tree.children) };
+  };
+
+  /** Apply drop to tree: remove movedBlock, insert at target per position. Returns new tree. */
+  const applyDropToTree = (tree, movedBlock, target, position) => {
+      if (!tree || !tree.children) return tree;
+      let t = removeBlockFromTree(tree, movedBlock.id);
+      const { rowId, colId, blockId: tgtBlockId } = target;
+      const maxCols = 6;
+      const findInTree = (nodes, path, cb) => {
+          for (let i = 0; i < (nodes || []).length; i++) {
+              const n = nodes[i];
+              if (n.type === 'row') {
+                  for (let j = 0; j < (n.children || []).length; j++) {
+                      const col = n.children[j];
+                      if (col.type === 'column' && n.id === rowId && col.id === colId) {
+                          const kids = col.children || [];
+                          const idx = kids.findIndex(b => b && b.id === tgtBlockId);
+                          if (idx >= 0) return cb(nodes, i, n, j, col, kids, idx);
+                      }
+                      if (col.type === 'column') findInTree(col.children, [...path, n.id, col.id], cb);
+                  }
+              } else if (n.type === 'column' && path[0] === rowId && n.id === colId) {
+                  const kids = n.children || [];
+                  const idx = kids.findIndex(b => b && b.id === tgtBlockId);
+                  if (idx >= 0) return cb(nodes, i, n, -1, n, kids, idx);
+              }
+          }
+      };
+      if (position === 'top' || position === 'bottom') {
+          let done = false;
+          const insertInColumn = (nodes) => {
+              for (const n of nodes || []) {
+                  if (n.type === 'row') for (const col of (n.children || [])) if (col.type === 'column' && insertInColumn(col.children)) return true;
+                  else if (n.type === 'column') {
+                      const kids = n.children || [];
+                      const idx = kids.findIndex(b => b && b.id === tgtBlockId);
+                      if (idx >= 0) {
+                          const insertIdx = position === 'top' ? idx : idx + 1;
+                          kids.splice(insertIdx, 0, movedBlock);
+                          done = true;
+                          return true;
+                      }
+                  }
+              }
+              return false;
+          };
+          t = JSON.parse(JSON.stringify(t));
+          const walk = (nodes) => {
+              for (const n of nodes || []) {
+                  if (n.type === 'row') for (const col of (n.children || [])) walk(col.children);
+                  else if (n.type === 'column') {
+                      const kids = n.children || [];
+                      const idx = kids.findIndex(b => b && b.id === tgtBlockId);
+                      if (idx >= 0) {
+                          kids.splice(position === 'top' ? idx : idx + 1, 0, movedBlock);
+                          return true;
+                      }
+                  }
+              }
+              return false;
+          };
+          walk(t.children);
+          return t;
+      }
+      if (position === 'left' || position === 'right') {
+          t = JSON.parse(JSON.stringify(t));
+          const walk = (nodes) => {
+              for (const n of nodes || []) {
+                  if (n.type === 'row' && n.id === rowId) {
+                      const cols = n.children || [];
+                      const colIdx = cols.findIndex(c => c.id === colId);
+                      if (colIdx >= 0) {
+                          const col = cols[colIdx];
+                          const kids = col.children || [];
+                          const blockIdx = kids.findIndex(b => b && b.id === tgtBlockId);
+                          if (blockIdx >= 0 && cols.length < maxCols) {
+                              const targetBlock = kids[blockIdx];
+                              const newCol = { id: generateId(), type: 'column', width: 1 / (cols.length + 1), children: [movedBlock] };
+                              if (position === 'left') {
+                                  cols.splice(colIdx, 0, newCol);
+                                  col.children = kids;
+                              } else {
+                                  cols.splice(colIdx + 1, 0, newCol);
+                              }
+                              return true;
+                          }
+                          if (blockIdx >= 0 && cols.length >= maxCols) {
+                              kids.splice(blockIdx + (position === 'right' ? 1 : 0), 0, movedBlock);
+                              return true;
+                          }
+                      }
+                      for (const c of cols) if (c.type === 'column' && walk(c.children)) return true;
+                  } else if (n.type === 'row') for (const c of (n.children || [])) if (walk(c.children)) return true;
+                  else if (n.type === 'column' && n.id === colId) {
+                      const kids = n.children || [];
+                      const blockIdx = kids.findIndex(b => b && b.id === tgtBlockId);
+                      if (blockIdx >= 0) {
+                          const targetBlock = kids[blockIdx];
+                          const newRow = { id: generateId(), type: 'row', children: [
+                              { id: generateId(), type: 'column', width: 0.5, children: position === 'left' ? [movedBlock, targetBlock] : [targetBlock, movedBlock].reverse() },
+                              { id: generateId(), type: 'column', width: 0.5, children: position === 'left' ? [targetBlock, movedBlock] : [movedBlock, targetBlock].reverse() }
+                          ]};
+                          if (position === 'left') newRow.children = [{ id: newRow.children[1].id, type: 'column', width: 0.5, children: [movedBlock] }, { id: newRow.children[0].id, type: 'column', width: 0.5, children: [targetBlock] }];
+                          else newRow.children = [{ id: newRow.children[0].id, type: 'column', width: 0.5, children: [targetBlock] }, { id: newRow.children[1].id, type: 'column', width: 0.5, children: [movedBlock] }];
+                          const idx = nodes.indexOf(n);
+                          if (idx >= 0) {
+                              nodes.splice(idx, 1, newRow);
+                              return true;
+                          }
+                      }
+                  }
+              }
+              return false;
+          };
+          const doScenarioA = () => {
+              for (let i = 0; i < (t.children || []).length; i++) {
+                  const n = t.children[i];
+                  if (n.type === 'column') {
+                      const kids = n.children || [];
+                      const blockIdx = kids.findIndex(b => b && b.id === tgtBlockId);
+                      if (blockIdx >= 0) {
+                          const targetBlock = kids[blockIdx];
+                          const col1 = { id: generateId(), type: 'column', width: 0.5, children: position === 'left' ? [movedBlock, targetBlock] : [targetBlock] };
+                          const col2 = { id: generateId(), type: 'column', width: 0.5, children: position === 'left' ? [targetBlock] : [targetBlock, movedBlock] };
+                          if (position === 'left') { col1.children = [movedBlock]; col2.children = [targetBlock]; }
+                          else { col1.children = [targetBlock]; col2.children = [movedBlock]; }
+                          const newRow = { id: generateId(), type: 'row', children: [col1, col2] };
+                          const above = kids.slice(0, blockIdx);
+                          const below = kids.slice(blockIdx + 1);
+                          const newChildren = [];
+                          if (above.length) newChildren.push({ id: generateId(), type: 'column', width: 1, children: above });
+                          newChildren.push(newRow);
+                          if (below.length) newChildren.push({ id: generateId(), type: 'column', width: 1, children: below });
+                          t.children.splice(i, 1, ...newChildren);
+                          return true;
+                      }
+                  } else if (n.type === 'row') {
+                      for (let j = 0; j < (n.children || []).length; j++) {
+                          const col = n.children[j];
+                          if (col.type === 'column' && col.id === colId && n.id === rowId) {
+                              const kids = col.children || [];
+                              const blockIdx = kids.findIndex(b => b && b.id === tgtBlockId);
+                              if (blockIdx >= 0 && n.children.length < maxCols) {
+                                  const targetBlock = kids[blockIdx];
+                                  const newCol = { id: generateId(), type: 'column', width: 1 / (n.children.length + 1), children: [movedBlock] };
+                                  if (position === 'left') n.children.splice(j, 0, newCol);
+                                  else n.children.splice(j + 1, 0, newCol);
+                                  return true;
+                              }
+                          }
+                      }
+                  } else if (n.id === tgtBlockId) {
+                      const newRow = { id: generateId(), type: 'row', children: [
+                          { id: generateId(), type: 'column', width: 0.5, children: position === 'left' ? [movedBlock, n] : [n] },
+                          { id: generateId(), type: 'column', width: 0.5, children: position === 'left' ? [n] : [n, movedBlock] }
+                      ]};
+                      if (position === 'left') { newRow.children[0].children = [movedBlock]; newRow.children[1].children = [n]; }
+                      else { newRow.children[0].children = [n]; newRow.children[1].children = [movedBlock]; }
+                      t.children[i] = newRow;
+                      return true;
+                  }
+              }
+              return false;
+          };
+          if (!walk(t.children)) doScenarioA();
+      }
+      return t;
+  };
+
+  /** Insert block after targetBlockId in tree. Returns new tree. */
+  const insertBlockAfterInTree = (tree, targetBlockId, newBlock) => {
+      if (!tree || !tree.children) return tree;
+      let done = false;
+      const mapNodes = (nodes) => {
+          if (!nodes || !nodes.length) return nodes;
+          const out = [];
+          for (const n of nodes) {
+              if (n.type === 'row') {
+                  out.push({ ...n, children: (n.children || []).map(c => c.type === 'column' ? { ...c, children: mapNodes(c.children || []) } : c) });
+              } else if (n.type === 'column') {
+                  const kids = n.children || [];
+                  const idx = kids.findIndex(b => b && b.id === targetBlockId);
+                  if (idx >= 0 && !done) {
+                      done = true;
+                      out.push({ ...n, children: [...kids.slice(0, idx + 1), newBlock, ...kids.slice(idx + 1)] });
+                  } else {
+                      out.push({ ...n, children: mapNodes(kids) });
+                  }
+              } else {
+                  if (n.id === targetBlockId && !done) {
+                      done = true;
+                      out.push(n, newBlock);
+                  } else {
+                      out.push(n);
+                  }
+              }
+          }
+          return out;
+      };
+      return { ...tree, children: mapNodes(tree.children) };
+  };
+
+  /** Count content blocks in tree. */
+  const countBlocksInTree = (tree) => {
+      if (!tree || !tree.children) return 0;
+      let count = 0;
+      const visit = (nodes) => {
+          for (const n of nodes || []) {
+              if (n.type === 'row') (n.children || []).forEach(c => visit(c.children || []));
+              else if (n.type === 'column') visit(n.children || []);
+              else if (n && n.id) count++;
+          }
+      };
+      visit(tree.children);
+      return count;
+  };
+
   const INITIAL_DATA = {
     notebooks: [
       {
@@ -1134,8 +1505,8 @@ html.dark .canvas-grid {
                         id: 'col1', blocks: [
                           { id: 'blk1', type: 'h1', content: 'Welcome to your new Note App!' },
                           { id: 'blk2', type: 'text', content: 'Try <b>bolding</b> or <i>italicizing</i> this text using standard keyboard shortcuts.' },
-                          { id: 'blk3', type: 'text', content: 'Type / to see available commands like /h1, /todo, /img, etc.' },
-                          { id: 'blk4', type: 'todo', content: 'Try checking this item', checked: false }
+                          { id: 'blk3', type: 'text', content: 'Type / to see available commands like /h1, /img, etc.' },
+                          { id: 'blk4', type: 'text', content: 'Use the slash menu for images, videos, links, and more.' }
                         ]
                       }
                     ]
@@ -1181,7 +1552,7 @@ html.dark .canvas-grid {
 
       const processHtml = (rawHtml, tag) => {
           if ((tag === 'ul' || tag === 'ol')) {
-              if (!rawHtml || rawHtml.trim() === '' || rawHtml === '<br>') return '<li></li>';
+              if (!rawHtml || rawHtml.trim() === '' || rawHtml === '<br>') return '<li>&nbsp;</li>';
               if (!rawHtml.includes('<li>')) return `<li>${rawHtml}</li>`;
           }
           return rawHtml;
@@ -1205,7 +1576,7 @@ html.dark .canvas-grid {
       useEffect(() => {
           if (!contentEditableRef.current) return;
           contentEditableRef.current.innerHTML = processHtml(html, tagName);
-      }, [blockId]);
+      }, [blockId, tagName]);
 
       useLayoutEffect(() => {
           if (autoFocusId !== blockId || !contentEditableRef.current) return;
@@ -1312,57 +1683,29 @@ html.dark .canvas-grid {
                   }
               }
 
-              // Standard behavior for text blocks and lists
+              // Headings: Enter always creates new block below (browsers may insert <br> in h1 by default)
+              if (!e.shiftKey && (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'h4')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onInsertBelow();
+                  return;
+              }
+
+              // Standard behavior for text blocks: Enter creates new block below
               if (!e.shiftKey) {
-                 if (tagName !== 'ul' && tagName !== 'ol') {
-                     // For regular text blocks, Enter creates a new block below
-                     // But if we have onExitList and content is empty, exit the list instead
-                     if (onExitList && contentEditableRef.current) {
-                         const text = contentEditableRef.current.innerText.trim();
-                         if (text === '') {
-                             e.preventDefault();
-                             onExitList();
-                             return;
-                         }
-                     }
-                     e.preventDefault();
-                     onInsertBelow();
-                     return;
-                 }
-                 // For ul/ol lists, check if we should exit the list (double-enter on blank last item)
-                 if (tagName === 'ul' || tagName === 'ol') {
-                     const selection = window.getSelection();
-                     if (selection.rangeCount > 0) {
-                         // Find the current li element
-                         let currentNode = selection.anchorNode;
-                         let currentLi = null;
-                         while (currentNode && currentNode !== contentEditableRef.current) {
-                             if (currentNode.nodeName === 'LI') {
-                                 currentLi = currentNode;
-                                 break;
-                             }
-                             currentNode = currentNode.parentNode;
-                         }
-                         
-                         if (currentLi) {
-                             const liText = currentLi.innerText.trim();
-                             const allLis = contentEditableRef.current.querySelectorAll('li');
-                             const isLastLi = allLis.length > 0 && allLis[allLis.length - 1] === currentLi;
-                             
-                             // If current li is blank and is the last one, exit the list
-                             if (liText === '' && isLastLi) {
-                                 e.preventDefault();
-                                 // Remove the blank li
-                                 currentLi.remove();
-                                 // Update the content
-                                 onChange(contentEditableRef.current.innerHTML);
-                                 // Create a new text block below
-                                 onInsertBelow();
-                                 return;
-                             }
-                         }
+                 // For regular text blocks, Enter creates a new block below
+                 // But if we have onExitList and content is empty, exit the list instead
+                 if (onExitList && contentEditableRef.current) {
+                     const text = contentEditableRef.current.innerText.trim();
+                     if (text === '') {
+                         e.preventDefault();
+                         onExitList();
+                         return;
                      }
                  }
+                 e.preventDefault();
+                 onInsertBelow();
+                 return;
               }
           }
 
@@ -1378,7 +1721,6 @@ html.dark .canvas-grid {
           }
           if (e.key === 'Tab') {
               e.preventDefault();
-              if (tagName === 'ul' || tagName === 'ol') document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null);
           }
           if ((e.ctrlKey || e.metaKey)) {
               switch(e.key.toLowerCase()) {
@@ -1401,7 +1743,7 @@ html.dark .canvas-grid {
                           onDelete();
                       }
                   } else {
-                      // Non-text block (h1, h2, h3, h4, ul, ol) - convert to text
+                      // Non-text block (h1, h2, h3, h4) - convert to text
                       e.preventDefault();
                       onConvert('text');
                   }
@@ -1414,10 +1756,7 @@ html.dark .canvas-grid {
           <>
               <Tag
                   ref={contentEditableRef}
-                  className={tagName === 'ul' || tagName === 'ol' ?
-                      `outline-none pl-5 ml-1 cursor-text list-outside ${className} ${tagName === 'ul' ? 'list-disc' : 'list-decimal'}` :
-                      `outline-none empty:before:content-[attr(placeholder)] empty:before:text-gray-300 cursor-text ${className}`
-                  }
+                  className={`outline-none empty:before:content-[attr(placeholder)] empty:before:text-gray-300 cursor-text ${className}`}
                   contentEditable
                   suppressContentEditableWarning
                   placeholder={placeholder}
@@ -1543,8 +1882,6 @@ html.dark .canvas-grid {
               case 'h2': return <ContentBlock tagName="h2" className="text-2xl font-bold mb-3 border-b border-gray-100 pb-1" {...props} placeholder="Heading 2" />;
               case 'h3': return <ContentBlock tagName="h3" className="text-xl font-bold mb-2" {...props} placeholder="Heading 3" />;
               case 'h4': return <ContentBlock tagName="h4" className="text-lg font-semibold mb-2 text-gray-600" {...props} placeholder="Heading 4" />;
-              case 'ul': return <ContentBlock tagName="ul" className="mb-2" {...props} />;
-              case 'ol': return <ContentBlock tagName="ol" className="mb-2" {...props} />;
               default: return <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" {...props} />;
           }
       };
@@ -1554,7 +1891,7 @@ html.dark .canvas-grid {
               <div 
                   draggable
                   onDragStart={(e) => onDragStart(e, block, rowId, colId)}
-                  onDragOver={(e) => onDragOver(e, block.id, rowId, colId)}
+                  onDragOver={(e) => onDragOver(e, block.id, [rowId, colId])}
                   onDrop={onDrop}
                   className={`group relative flex gap-2 items-start p-1 rounded transition-all ${indicatorStyle} ${bgClass} ${borderClass}`}
               >
@@ -1562,18 +1899,7 @@ html.dark .canvas-grid {
                       <GripVertical size={16} />
                   </div>
                   <div className="flex-1 min-w-0">
-                      {['text', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol'].includes(block.type) && renderTextContent()}
-                      
-                      {block.type === 'todo' && (
-                          <div className="flex items-start gap-2 mb-1">
-                              <div className="pt-1 select-none" contentEditable={false}>
-                                  <input type="checkbox" checked={block.checked || false} onChange={(e) => onUpdate(block.id, { checked: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-500 rounded border-gray-300" />
-                              </div>
-                              <div className={`flex-1 ${block.checked ? 'line-through text-gray-400' : ''}`}>
-                                  <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" html={block.content} onChange={(content) => onUpdate(block.id, { content })} onInsertBelow={() => onInsertAfter(block.id, 'todo')} onInsertTextBelow={() => onInsertAfter(block.id, 'text')} onExitList={() => handleConvert('text')} blockId={block.id} autoFocusId={autoFocusId} onFocus={onFocus} onConvert={handleConvert} onDelete={() => onDelete(block.id)} isLastBlock={isLastBlock} placeholder="To-do item" />
-                              </div>
-                          </div>
-                      )}
+                      {['text', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'todo'].includes(block.type) && renderTextContent()}
 
                       {block.type === 'image' && (
                           <div className="space-y-2">
@@ -4522,11 +4848,18 @@ html.dark .canvas-grid {
     };
 
     const { notebook: activeNotebook, tab: activeTab, page: activePage } = getActiveContext(data, activeNotebookId, activeTabId, activePageId);
-    const rowsForEditor = Array.isArray(activePageRows ?? activePage?.rows) ? (activePageRows ?? activePage?.rows) : [];
+    const pageTree = activePageRows && activePageRows.version === TREE_VERSION ? activePageRows : (activePage ? normalizePageContent(activePage) : null);
+    const rowsForEditor = pageTree ? treeToRows(pageTree) : [];
 
-    const flushActivePageToData = (rows) => {
+    const flushActivePageToData = (tree) => {
         if (!activePageId || !activeTabId || !activeNotebookId) return;
-        const next = updatePageInData(data, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({ ...p, rows: rows ?? activePageRows }));
+        const t = tree ?? activePageRows;
+        if (!t) return;
+        const next = updatePageInData(data, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({
+            ...p,
+            content: t,
+            rows: treeToRows(t)
+        }));
         setData(next);
         return next;
     };
@@ -4539,7 +4872,7 @@ html.dark .canvas-grid {
             const r = activePageRowsRef.current;
             const { notebookId, tabId, pageId } = activeIdsRef.current;
             if (!d || !pageId || !tabId || !notebookId || !r) return;
-            setData(updatePageInData(d, { notebookId, tabId, pageId }, p => ({ ...p, rows: r })));
+            setData(updatePageInData(d, { notebookId, tabId, pageId }, p => ({ ...p, content: r, rows: treeToRows(r) })));
         }, 300);
     };
 
@@ -4555,8 +4888,8 @@ html.dark .canvas-grid {
 
     useEffect(() => {
         const ctx = getActiveContext(data, activeNotebookId, activeTabId, activePageId);
-        const rows = ctx.page?.rows;
-        setActivePageRows(ctx.page ? (Array.isArray(rows) ? rows : []) : null);
+        const tree = ctx.page ? normalizePageContent(ctx.page) : null;
+        setActivePageRows(tree);
     }, [data, activePageId, activeTabId, activeNotebookId]);
 
     useEffect(() => {
@@ -4565,11 +4898,12 @@ html.dark .canvas-grid {
         activeIdsRef.current = { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId };
     });
 
-    const updatePageContent = (rows, shouldSaveHistory = false) => {
+    const updatePageContent = (tree, shouldSaveHistory = false) => {
         if (!activePageId || !activeTabId || !activeNotebookId) return;
-        setActivePageRows(rows);
+        const t = tree && tree.version === TREE_VERSION ? tree : rowsToTree(Array.isArray(tree) ? tree : []);
+        setActivePageRows(t);
         if (shouldSaveHistory) {
-            const next = updatePageInData(data, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({ ...p, rows }));
+            const next = updatePageInData(data, { notebookId: activeNotebookId, tabId: activeTabId, pageId: activePageId }, p => ({ ...p, content: t, rows: treeToRows(t) }));
             setData(next);
             saveToHistory(next);
         } else {
@@ -4584,72 +4918,39 @@ html.dark .canvas-grid {
     };
 
     const removeBlock = (blockId) => {
-        const newRows = rowsForEditor.map(row => ({
-            ...row,
-            columns: row.columns.map(col => ({
-                ...col,
-                blocks: col.blocks.filter(b => b.id !== blockId)
-            })).filter(col => col.blocks.length > 0)
-        })).filter(row => row.columns.length > 0);
-        updatePageContent(newRows, true);
+        const tree = pageTree;
+        if (!tree) return;
+        updatePageContent(removeBlockFromTree(tree, blockId), true);
         showNotification('Block deleted', 'success');
     };
 
     useEffect(() => { updatePageContentRef.current = updatePageContent; });
 
     const handleUpdateBlock = useCallback((blockId, updates) => {
-        const r = activePageRowsRef.current;
-        if (!r) return;
-        const newRows = r.map(row => ({
-            ...row,
-            columns: row.columns.map(col => ({
-                ...col,
-                blocks: col.blocks.map(b => b.id === blockId ? { ...b, ...updates } : b)
-            }))
-        }));
-        setActivePageRows(newRows);
+        const tree = activePageRowsRef.current;
+        if (!tree || tree.version !== TREE_VERSION) return;
+        setActivePageRows(updateBlockInTree(tree, blockId, updates));
         scheduleSyncToData();
     }, []);
 
     const handleRemoveBlock = useCallback((blockId) => {
-        const r = activePageRowsRef.current;
-        if (!r) return;
-        const newRows = r.map(row => ({
-            ...row,
-            columns: row.columns.map(col => ({
-                ...col,
-                blocks: col.blocks.filter(b => b.id !== blockId)
-            })).filter(col => col.blocks.length > 0)
-        })).filter(row => row.columns.length > 0);
+        const tree = activePageRowsRef.current;
+        if (!tree || tree.version !== TREE_VERSION) return;
         const fn = updatePageContentRef.current;
-        if (fn) fn(newRows, true);
+        if (fn) fn(removeBlockFromTree(tree, blockId), true);
         showNotification('Block deleted', 'success');
     }, []);
 
     const handleInsertBlockAfter = useCallback((targetBlockId, blockType) => {
-        const r = activePageRowsRef.current;
+        const tree = activePageRowsRef.current;
         const ids = activeIdsRef.current;
-        if (!r || !ids.pageId || !ids.tabId || !ids.notebookId) return;
+        if (!tree || tree.version !== TREE_VERSION || !ids.pageId || !ids.tabId || !ids.notebookId) return;
         const newBlockId = generateId();
         const newBlock = { id: newBlockId, type: blockType, content: '', url: '', ...(blockType === 'todo' ? { checked: false } : {}) };
-        const newRows = JSON.parse(JSON.stringify(r));
-        let done = false;
-        for (const row of newRows) {
-            for (const col of row.columns) {
-                const idx = col.blocks.findIndex(b => b.id === targetBlockId);
-                if (idx > -1) {
-                    col.blocks.splice(idx + 1, 0, newBlock);
-                    done = true;
-                    break;
-                }
-            }
-            if (done) break;
-        }
-        if (done) {
-            const fn = updatePageContentRef.current;
-            if (fn) fn(newRows, true);
-            setAutoFocusId(newBlockId);
-        }
+        const newTree = insertBlockAfterInTree(tree, targetBlockId, newBlock);
+        const fn = updatePageContentRef.current;
+        if (fn) fn(newTree, true);
+        setAutoFocusId(newBlockId);
     }, []);
 
     const handleRequestFocus = useCallback((blockId) => setAutoFocusId(blockId), []);
@@ -4672,6 +4973,22 @@ html.dark .canvas-grid {
     const handleBlockDragStart = useCallback((e, block, rowId, colId) => {
         e.dataTransfer.setData('block_drag', JSON.stringify({ block, rowId, colId }));
         setDraggedBlock({ block, rowId, colId });
+        const el = e.currentTarget;
+        if (el && el.getBoundingClientRect) {
+            const h = el.getBoundingClientRect().height;
+            if (h > 500) {
+                const ghost = document.createElement('div');
+                ghost.className = 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded shadow-lg px-3 py-2 text-sm text-gray-600 dark:text-gray-300 overflow-hidden';
+                ghost.style.cssText = 'width: 200px; height: 40px; font-size: 12px; line-height: 1.4; display: flex; align-items: center; white-space: nowrap; text-overflow: ellipsis;';
+                const text = (block.content || '').replace(/<[^>]+>/g, '').trim().slice(0, 60) || 'Block';
+                ghost.textContent = text + (text.length >= 60 ? '...' : '');
+                ghost.style.position = 'absolute';
+                ghost.style.top = '-9999px';
+                document.body.appendChild(ghost);
+                e.dataTransfer.setDragImage(ghost, 10, 20);
+                requestAnimationFrame(() => document.body.removeChild(ghost));
+            }
+        }
     }, []);
 
     const lastDropTargetRef = useRef(null);
@@ -4687,7 +5004,7 @@ html.dark .canvas-grid {
         setDropTarget(null);
     }, []);
 
-    const handleBlockDragOver = useCallback((e, blockId, rowId, colId) => {
+    const handleBlockDragOver = useCallback((e, blockId, blockPath) => {
         e.preventDefault();
         e.stopPropagation();
         if (!draggedBlock || draggedBlock.block.id === blockId) return;
@@ -4696,15 +5013,18 @@ html.dark .canvas-grid {
         const y = e.clientY - rect.top;
         const w = rect.width;
         const h = rect.height;
-        let position = 'bottom';
-        if (y < h * 0.3) position = 'top';
+        const rowId = blockPath[0];
+        const colId = blockPath[1];
         const targetRow = rowsForEditor.find(r => r.id === rowId);
-        const isMaxColumns = targetRow && targetRow.columns.length >= settings.maxColumns;
-        if (!isMaxColumns) {
-            if (x < w * 0.2) position = 'left';
-            else if (x > w * 0.8) position = 'right';
-        }
-        const next = { rowId, colId, blockId, position };
+        const colCount = targetRow ? (targetRow.columns?.length || 0) : 0;
+        const isMaxColumns = colCount >= (settings.maxColumns || 6);
+        const yMid = h * 0.25 <= y && y <= h * 0.75;
+        let position = 'bottom';
+        if (!isMaxColumns && yMid && x < w * 0.2) position = 'left';
+        else if (!isMaxColumns && yMid && x > w * 0.8) position = 'right';
+        else if (y < h * 0.25) position = 'top';
+        else if (y > h * 0.75) position = 'bottom';
+        const next = { rowId, colId, blockId, blockPath, position };
         const last = lastDropTargetRef.current;
         if (last && last.blockId === next.blockId && last.position === next.position && last.rowId === next.rowId && last.colId === next.colId) return;
         lastDropTargetRef.current = next;
@@ -4943,13 +5263,15 @@ html.dark .canvas-grid {
         return starred;
     };
 
-    // Helper to create a default page with one empty text block
+    // Helper to create a default page with one empty text block (tree format)
     const createDefaultPage = (name = 'New Page') => {
+      const tree = { version: TREE_VERSION, children: [{ id: generateId(), type: 'text', content: '' }] };
       return { 
         id: generateId(), 
         name, 
         createdAt: Date.now(), 
-        rows: [{ id: generateId(), columns: [{ id: generateId(), blocks: [{ id: generateId(), type: 'text', content: '' }] }] }],
+        content: tree,
+        rows: treeToRows(tree),
         icon: '📄', 
         cover: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
       };
@@ -5705,10 +6027,12 @@ html.dark .canvas-grid {
     };
 
     const addBlock = (type, initialData = {}) => {
-        if (!activePage) return;
+        if (!activePage || !pageTree) return;
         const newBlock = { id: generateId(), type, content: '', url: '', ...initialData };
-        const newRow = { id: generateId(), columns: [{ id: generateId(), blocks: [newBlock] }] };
-        updatePageContent([...rowsForEditor, newRow], true);
+        const newTree = JSON.parse(JSON.stringify(pageTree));
+        if (!newTree.children) newTree.children = [];
+        newTree.children.push({ id: generateId(), type: 'row', children: [{ id: generateId(), type: 'column', width: 1, children: [newBlock] }] });
+        updatePageContent(newTree, true);
         setShowAddMenu(false);
         setAutoFocusId(newBlock.id);
     };
@@ -6118,7 +6442,8 @@ html.dark .canvas-grid {
     };
 
     const changeBlockType = (blockId, newType) => {
-        const block = findBlockInRows(rowsForEditor, blockId);
+        const found = pageTree ? findBlockInTree(pageTree, blockId) : null;
+        const block = found ? found.block : null;
         if (!block) { setBlockMenu(null); return; }
         const cur = block.type;
         const curContent = block.content || '';
@@ -6731,7 +7056,7 @@ html.dark .canvas-grid {
                                        <input ref={titleInputRef} className="text-4xl font-bold flex-1 outline-none placeholder-gray-300 py-3 leading-normal bg-transparent" value={activePage.name} onChange={(e) => updateLocalName('page', activePage.id, e.target.value)} onBlur={() => syncRenameToDrive('page', activePage.id)} onClick={(e) => e.target.select()} onKeyDown={handleTitleKeyDown} />
                                    </div>
                                    <div className="text-gray-400 text-xs mt-2 flex gap-4">
-                                      <span>Created: Today {new Date(activePage.createdAt).toLocaleDateString()} {new Date(activePage.createdAt).toLocaleTimeString()} • {rowsForEditor.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0)} blocks</span>
+                                      <span>Created: Today {new Date(activePage.createdAt).toLocaleDateString()} {new Date(activePage.createdAt).toLocaleTimeString()} • {pageTree ? countBlocksInTree(pageTree) : 0} blocks</span>
                                    </div>
                               </div>
                               <div 
@@ -6794,11 +7119,31 @@ html.dark .canvas-grid {
                                   onDragEnd={handleBlockDragEnd}
                               >
                                   {(() => {
-                                      const totalBlocks = rowsForEditor.reduce((acc, r) => acc + r.columns.reduce((ac, c) => ac + c.blocks.length, 0), 0);
-                                      return rowsForEditor.map((row) => (
-                                          <div key={row.id} className="flex gap-4 group/row relative">
+                                      const totalBlocks = pageTree ? countBlocksInTree(pageTree) : 0;
+                                      const hasBlocks = rowsForEditor.length > 0;
+                                      return (
+                                          <>
+                                          {!hasBlocks && (
+                                              <div className="min-h-[120px] border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm"
+                                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; }}
+                                                  onDrop={(e) => {
+                                                      e.preventDefault();
+                                                      if (draggedBlock) {
+                                                          let tree = pageTree ? JSON.parse(JSON.stringify(pageTree)) : { version: TREE_VERSION, children: [] };
+                                                          tree = removeBlockFromTree(tree, draggedBlock.block.id);
+                                                          const newTree = { ...tree, children: [draggedBlock.block, ...(tree.children || [])] };
+                                                          updatePageContent(newTree, true);
+                                                          setDraggedBlock(null);
+                                                          setDropTarget(null);
+                                                      }
+                                                  }}>
+                                                  Drop blocks or files here
+                                              </div>
+                                          )}
+                                          {rowsForEditor.map((row) => (
+                                          <div key={row.id} className="flex gap-4 group/row relative items-stretch">
                                           {row.columns.map((col) => (
-                                              <div key={col.id} className="flex-1 min-w-[50px] space-y-2">
+                                              <div key={col.id} className="flex-1 min-w-[50px] space-y-2 flex flex-col">
                                                   {col.blocks.map((block) => (
                                                       <BlockComponent 
                                                           key={block.id}
@@ -6827,7 +7172,10 @@ html.dark .canvas-grid {
                                               </div>
                                           ))}
                                       </div>
-                                  )); })()}
+                                  ))}
+                                          </>
+                                      );
+                                  })()}
                               </div>
                               
                               <div className="mt-12 pb-20 opacity-50 hover:opacity-70 transition-opacity">
@@ -6835,9 +7183,6 @@ html.dark .canvas-grid {
                                     {[
                                         { cmd: '/h1', desc: 'heading' },
                                         { cmd: '/h2', desc: 'subheading' },
-                                        { cmd: '/ul', desc: 'bullets' },
-                                        { cmd: '/ol', desc: 'numbers' },
-                                        { cmd: '/todo', desc: 'checkbox' },
                                         { cmd: '/img', desc: 'image' },
                                         { cmd: '/vid', desc: 'video' },
                                         { cmd: '/link', desc: 'link' },

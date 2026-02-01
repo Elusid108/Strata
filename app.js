@@ -1,7 +1,7 @@
   const { useState, useEffect, useRef, useLayoutEffect, useCallback, memo } = React;
 
   // --- App Version ---
-  const APP_VERSION = "2.6.7";
+  const APP_VERSION = "2.6.8";
 
   // --- Offline Viewer HTML Generator ---
   const generateOfflineViewerHtml = () => {
@@ -353,8 +353,27 @@
             const icon = pageMeta.appProperties?.icon || pageMeta.icon || '📄';
             html += '<h1 class="page-title"><span>' + icon + '</span> ' + pageMeta.name + '</h1>';
             
+            function treeToRows(tree) {
+                if (!tree || !tree.children) return [];
+                var rows = [];
+                for (var i = 0; i < tree.children.length; i++) {
+                    var n = tree.children[i];
+                    if (n.type === 'row') {
+                        var cols = n.children || [];
+                        rows.push({ id: n.id, columns: cols.map(function(c){ return { id: c.id, width: c.width, blocks: (c.children || []).filter(function(b){ return b && b.type !== 'row' && b.type !== 'column'; }); }; }) });
+                    } else if (n.type === 'column') {
+                        rows.push({ id: 'r-' + n.id, columns: [{ id: n.id, blocks: (n.children || []).filter(function(b){ return b && b.type !== 'row' && b.type !== 'column'; }) }] });
+                    } else {
+                        rows.push({ id: 'r-' + Date.now(), columns: [{ id: 'c-' + Date.now(), blocks: [n] }] });
+                    }
+                }
+                return rows;
+            }
+            
             function renderBlocks(rows) {
                 let blocksHtml = '';
+                if (rows && rows.version === 2 && rows.children) rows = treeToRows(rows);
+                if (!Array.isArray(rows)) return blocksHtml;
                 for (const row of rows) {
                     if (!row.columns) continue;
                     for (const col of row.columns) {
@@ -374,9 +393,6 @@
                     case 'h2': return '<div class="block block-h2">' + c + '</div>';
                     case 'h3': return '<div class="block block-h3">' + c + '</div>';
                     case 'h4': return '<div class="block block-h4">' + c + '</div>';
-                    case 'ul': return '<ul class="block block-ul"><li>' + c + '</li></ul>';
-                    case 'ol': return '<ol class="block block-ol"><li>' + c + '</li></ol>';
-                    case 'todo': return '<div class="block block-todo"><input type="checkbox" ' + (block.checked ? 'checked' : '') + ' disabled> <span>' + c + '</span></div>';
                     case 'divider': return '<div class="block-divider"></div>';
                     case 'image': return block.url ? '<div class="block block-image"><img src="' + block.url + '" alt=""></div>' : '';
                     case 'video': return block.url ? '<div class="block block-video"><iframe src="https://www.youtube.com/embed/' + getYouTubeId(block.url) + '" allowfullscreen></iframe></div>' : '';
@@ -390,7 +406,7 @@
                 return match ? match[1] : '';
             }
 
-            if (Array.isArray(content)) {
+            if (content && (content.version === 2 && content.children || Array.isArray(content))) {
                 html += renderBlocks(content);
             }
             html += '</div>';
@@ -489,9 +505,6 @@
     { cmd: 'h2', aliases: ['h2', 'header2', 'heading2'], label: 'Heading 2', desc: 'Medium section heading', type: 'h2' },
     { cmd: 'h3', aliases: ['h3', 'header3', 'heading3'], label: 'Heading 3', desc: 'Small section heading', type: 'h3' },
     { cmd: 'h4', aliases: ['h4', 'header4', 'heading4'], label: 'Heading 4', desc: 'Tiny section heading', type: 'h4' },
-    { cmd: 'ul', aliases: ['ul', 'list', 'bullet', 'bullets'], label: 'Bullet List', desc: 'Unordered list', type: 'ul' },
-    { cmd: 'ol', aliases: ['ol', 'num', 'ordered', 'numbered'], label: 'Numbered List', desc: 'Ordered list', type: 'ol' },
-    { cmd: 'todo', aliases: ['todo', 'check', 'task', 'checkbox'], label: 'To-do', desc: 'Checkbox item', type: 'todo' },
     { cmd: 'img', aliases: ['img', 'image', 'pic', 'picture'], label: 'Image', desc: 'Embed an image', type: 'image' },
     { cmd: 'vid', aliases: ['vid', 'video', 'youtube'], label: 'Video', desc: 'Embed YouTube video', type: 'video' },
     { cmd: 'link', aliases: ['link', 'url', 'bookmark'], label: 'Link', desc: 'Web bookmark', type: 'link' },
@@ -623,8 +636,8 @@
                         id: 'col1', blocks: [
                           { id: 'blk1', type: 'h1', content: 'Welcome to your new Note App!' },
                           { id: 'blk2', type: 'text', content: 'Try <b>bolding</b> or <i>italicizing</i> this text using standard keyboard shortcuts.' },
-                          { id: 'blk3', type: 'text', content: 'Type / to see available commands like /h1, /todo, /img, etc.' },
-                          { id: 'blk4', type: 'todo', content: 'Try checking this item', checked: false }
+                          { id: 'blk3', type: 'text', content: 'Type / to see available commands like /h1, /img, etc.' },
+                          { id: 'blk4', type: 'text', content: 'Use the slash menu for images, videos, links, and more.' }
                         ]
                       }
                     ]
@@ -796,57 +809,21 @@
                   }
               }
 
-              // Standard behavior for text blocks and lists
+              // Standard behavior for text blocks: Enter creates new block below
               if (!e.shiftKey) {
-                 if (tagName !== 'ul' && tagName !== 'ol') {
-                     // For regular text blocks, Enter creates a new block below
-                     // But if we have onExitList and content is empty, exit the list instead
-                     if (onExitList && contentEditableRef.current) {
-                         const text = contentEditableRef.current.innerText.trim();
-                         if (text === '') {
-                             e.preventDefault();
-                             onExitList();
-                             return;
-                         }
-                     }
-                     e.preventDefault();
-                     onInsertBelow();
-                     return;
-                 }
-                 // For ul/ol lists, check if we should exit the list (double-enter on blank last item)
-                 if (tagName === 'ul' || tagName === 'ol') {
-                     const selection = window.getSelection();
-                     if (selection.rangeCount > 0) {
-                         // Find the current li element
-                         let currentNode = selection.anchorNode;
-                         let currentLi = null;
-                         while (currentNode && currentNode !== contentEditableRef.current) {
-                             if (currentNode.nodeName === 'LI') {
-                                 currentLi = currentNode;
-                                 break;
-                             }
-                             currentNode = currentNode.parentNode;
-                         }
-                         
-                         if (currentLi) {
-                             const liText = currentLi.innerText.trim();
-                             const allLis = contentEditableRef.current.querySelectorAll('li');
-                             const isLastLi = allLis.length > 0 && allLis[allLis.length - 1] === currentLi;
-                             
-                             // If current li is blank and is the last one, exit the list
-                             if (liText === '' && isLastLi) {
-                                 e.preventDefault();
-                                 // Remove the blank li
-                                 currentLi.remove();
-                                 // Update the content
-                                 onChange(contentEditableRef.current.innerHTML);
-                                 // Create a new text block below
-                                 onInsertBelow();
-                                 return;
-                             }
-                         }
+                 // For regular text blocks, Enter creates a new block below
+                 // But if we have onExitList and content is empty, exit the list instead
+                 if (onExitList && contentEditableRef.current) {
+                     const text = contentEditableRef.current.innerText.trim();
+                     if (text === '') {
+                         e.preventDefault();
+                         onExitList();
+                         return;
                      }
                  }
+                 e.preventDefault();
+                 onInsertBelow();
+                 return;
               }
           }
 
@@ -862,7 +839,6 @@
           }
           if (e.key === 'Tab') {
               e.preventDefault();
-              if (tagName === 'ul' || tagName === 'ol') document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null);
           }
           if ((e.ctrlKey || e.metaKey)) {
               switch(e.key.toLowerCase()) {
@@ -885,7 +861,7 @@
                           onDelete();
                       }
                   } else {
-                      // Non-text block (h1, h2, h3, h4, ul, ol) - convert to text
+                      // Non-text block (h1, h2, h3, h4) - convert to text
                       e.preventDefault();
                       onConvert('text');
                   }
@@ -898,10 +874,7 @@
           <>
               <Tag
                   ref={contentEditableRef}
-                  className={tagName === 'ul' || tagName === 'ol' ?
-                      `outline-none pl-5 ml-1 cursor-text list-outside ${className} ${tagName === 'ul' ? 'list-disc' : 'list-decimal'}` :
-                      `outline-none empty:before:content-[attr(placeholder)] empty:before:text-gray-300 cursor-text ${className}`
-                  }
+                  className={`outline-none empty:before:content-[attr(placeholder)] empty:before:text-gray-300 cursor-text ${className}`}
                   contentEditable
                   suppressContentEditableWarning
                   placeholder={placeholder}
@@ -987,8 +960,6 @@
               case 'h2': return <ContentBlock tagName="h2" className="text-2xl font-bold mb-3 border-b border-gray-100 pb-1" {...props} placeholder="Heading 2" />;
               case 'h3': return <ContentBlock tagName="h3" className="text-xl font-bold mb-2" {...props} placeholder="Heading 3" />;
               case 'h4': return <ContentBlock tagName="h4" className="text-lg font-semibold mb-2 text-gray-600" {...props} placeholder="Heading 4" />;
-              case 'ul': return <ContentBlock tagName="ul" className="mb-2" {...props} />;
-              case 'ol': return <ContentBlock tagName="ol" className="mb-2" {...props} />;
               default: return <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" {...props} />;
           }
       };
@@ -1006,18 +977,7 @@
                       <GripVertical size={16} />
                   </div>
                   <div className="flex-1 min-w-0">
-                      {['text', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol'].includes(block.type) && renderTextContent()}
-                      
-                      {block.type === 'todo' && (
-                          <div className="flex items-start gap-2 mb-1">
-                              <div className="pt-1 select-none" contentEditable={false}>
-                                  <input type="checkbox" checked={block.checked || false} onChange={(e) => onUpdate(block.id, { checked: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-500 rounded border-gray-300" />
-                              </div>
-                              <div className={`flex-1 ${block.checked ? 'line-through text-gray-400' : ''}`}>
-                                  <ContentBlock tagName="div" className="leading-relaxed min-h-[1.5em]" html={block.content} onChange={(content) => onUpdate(block.id, { content })} onInsertBelow={() => onInsertAfter(block.id, 'todo')} onInsertTextBelow={() => onInsertAfter(block.id, 'text')} onExitList={() => handleConvert('text')} blockId={block.id} autoFocusId={autoFocusId} onFocus={onFocus} onConvert={handleConvert} onDelete={() => onDelete(block.id)} isLastBlock={isLastBlock} placeholder="To-do item" />
-                              </div>
-                          </div>
-                      )}
+                      {['text', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'todo'].includes(block.type) && renderTextContent()}
 
                       {block.type === 'image' && (
                           <div className="space-y-2">
@@ -6122,9 +6082,6 @@
                                     {[
                                         { cmd: '/h1', desc: 'heading' },
                                         { cmd: '/h2', desc: 'subheading' },
-                                        { cmd: '/ul', desc: 'bullets' },
-                                        { cmd: '/ol', desc: 'numbers' },
-                                        { cmd: '/todo', desc: 'checkbox' },
                                         { cmd: '/img', desc: 'image' },
                                         { cmd: '/vid', desc: 'video' },
                                         { cmd: '/link', desc: 'link' },
