@@ -453,7 +453,7 @@ const MermaidPageComponent = ({
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-gray-800">
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center gap-3 flex-shrink-0 flex-wrap">
-        <span className="text-2xl">{page.icon || '</>'}</span>
+        <span className="text-2xl text-gray-600 dark:text-gray-400">{page.icon || '</>'}</span>
         {editingName ? (
           <input
             className="font-semibold text-gray-700 dark:text-gray-200 outline-none border-b-2 border-blue-400 bg-transparent w-40"
