@@ -17,7 +17,8 @@ import {
   getPageBgClass, 
   getPickerPosition,
   findBlockInRows,
-  getNextTabColor
+  getNextTabColor,
+  COLOR_BG_CLASSES
 } from './lib/utils';
 import { 
   rowsToTree, 
@@ -41,7 +42,7 @@ import * as GoogleAPI from './lib/google-api';
 import {
   Plus, Trash2, GripVertical, X, Settings, Star, Book, 
   Edit3, FolderOpen, AlertCircle, Sun, Moon, Monitor, Columns,
-  ChevronRight, MoreVertical, GoogleG
+  ChevronRight, MoreVertical, GoogleG, Minimize2, Maximize2
 } from './components/icons';
 
 // Components
@@ -273,6 +274,14 @@ function App() {
     const tree = ctx.page ? normalizePageContent(ctx.page) : null;
     setActivePageRows(tree);
   }, [data, activePageId, activeTabId, activeNotebookId]);
+
+  // #region agent log
+  useEffect(() => {
+    if (activePage) {
+      fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:activePage-effect',message:'Active page changed',data:{pageId:activePage.id,pageName:activePage.name,pageType:activePage.type,hasEmbedUrl:!!activePage.embedUrl,embedUrl:activePage.embedUrl,driveFileId:activePage.driveFileId,googleFileId:activePage.googleFileId,url:activePage.url,webViewLink:activePage.webViewLink,allKeys:Object.keys(activePage)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6-H8'})}).catch(()=>{});
+    }
+  }, [activePage]);
+  // #endregion
 
   useEffect(() => {
     dataRef.current = data;
@@ -1307,14 +1316,16 @@ function App() {
   return (
     <div className="h-screen flex bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200">
       {/* SIDEBAR - Notebooks */}
-      <div className="w-56 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+      <div className={`${settings.condensedView ? 'w-16' : 'w-56'} bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-200`}>
         {/* Header */}
-        <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Book size={18} className="text-blue-500" />
-            <span className="font-semibold text-sm">Strata</span>
-            <span className="text-xs text-gray-400">v{APP_VERSION}</span>
-          </div>
+        <div className={`p-3 border-b border-gray-200 dark:border-gray-700 flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'}`}>
+          {!settings.condensedView && (
+            <div className="flex items-center gap-2">
+              <Book size={18} className="text-blue-500" />
+              <span className="font-semibold text-sm">Strata</span>
+              <span className="text-xs text-gray-400">v{APP_VERSION}</span>
+            </div>
+          )}
           <button 
             onClick={() => setShowSettings(true)} 
             className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded settings-trigger"
@@ -1328,21 +1339,24 @@ function App() {
           {isLoadingAuth ? (
             <div className="text-xs text-gray-500 text-center py-2">Loading...</div>
           ) : isAuthenticated ? (
-            <div className="flex items-center gap-2 p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer" onClick={() => setShowSignOutConfirm(true)}>
+            <div className={`flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer`} onClick={() => setShowSignOutConfirm(true)} title={settings.condensedView ? `${userName} (${userEmail})` : undefined}>
               <GoogleG size={16} />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium truncate">{userName}</div>
-                <div className="text-xs text-gray-500 truncate">{userEmail}</div>
-              </div>
+              {!settings.condensedView && (
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium truncate">{userName}</div>
+                  <div className="text-xs text-gray-500 truncate">{userEmail}</div>
+                </div>
+              )}
               {isSyncing && <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />}
             </div>
           ) : (
             <button
               onClick={handleSignIn}
-              className="w-full flex items-center justify-center gap-2 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 text-sm"
+              className={`w-full flex items-center justify-center gap-2 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 text-sm`}
+              title={settings.condensedView ? "Sign in with Google" : undefined}
             >
               <GoogleG size={16} />
-              <span>Sign in with Google</span>
+              {!settings.condensedView && <span>Sign in with Google</span>}
             </button>
           )}
         </div>
@@ -1352,14 +1366,19 @@ function App() {
           <div className="border-b border-gray-200 dark:border-gray-700">
             <button
               onClick={() => setFavoritesExpanded(!favoritesExpanded)}
-              className="w-full flex items-center gap-2 p-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase hover:bg-gray-200 dark:hover:bg-gray-700"
+              className={`w-full flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} p-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase hover:bg-gray-200 dark:hover:bg-gray-700`}
+              title={settings.condensedView ? `Favorites (${starredPages.length})` : undefined}
             >
-              <ChevronRight size={12} className={`transition-transform ${favoritesExpanded ? 'rotate-90' : ''}`} />
+              {!settings.condensedView && <ChevronRight size={12} className={`transition-transform ${favoritesExpanded ? 'rotate-90' : ''}`} />}
               <Star size={12} className="text-yellow-400" />
-              <span>Favorites</span>
-              <span className="text-gray-400">({starredPages.length})</span>
+              {!settings.condensedView && (
+                <>
+                  <span>Favorites</span>
+                  <span className="text-gray-400">({starredPages.length})</span>
+                </>
+              )}
             </button>
-            {favoritesExpanded && (
+            {favoritesExpanded && !settings.condensedView && (
               <div className="pb-2">
                 {starredPages.map(page => (
                   <div
@@ -1385,9 +1404,9 @@ function App() {
         {/* Notebooks List */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-2">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Notebooks</span>
-              <button onClick={addNotebook} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded">
+            <div className={`flex items-center ${settings.condensedView ? 'justify-center' : 'justify-between'} mb-2`}>
+              {!settings.condensedView && <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Notebooks</span>}
+              <button onClick={addNotebook} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded" title="Add notebook">
                 <Plus size={14} />
               </button>
             </div>
@@ -1399,24 +1418,26 @@ function App() {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleNavDrop(e, 'notebook', index)}
                 onClick={() => selectNotebook(notebook.id)}
-                className={`group flex items-center gap-2 p-2 rounded cursor-pointer mb-1 ${
+                className={`group flex items-center ${settings.condensedView ? 'justify-center' : 'gap-2'} p-2 rounded cursor-pointer mb-1 ${
                   activeNotebookId === notebook.id 
                     ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' 
                     : 'hover:bg-gray-200 dark:hover:bg-gray-700'
                 }`}
+                title={settings.condensedView ? notebook.name : undefined}
               >
                 <span
-                  className="cursor-pointer hover:opacity-80 notebook-icon-trigger"
+                  className={`${settings.condensedView ? 'text-xl' : ''} cursor-pointer hover:opacity-80 notebook-icon-trigger`}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (activeNotebookId !== notebook.id) return;
+                    if (settings.condensedView) return;
                     const pos = getPickerPosition(e.clientY, e.clientX);
                     setNotebookIconPicker(notebookIconPicker?.id === notebook.id ? null : { id: notebook.id, top: pos.top, left: pos.left });
                   }}
                 >
                   {notebook.icon || '📓'}
                 </span>
-                {activeNotebookId === notebook.id && editingNotebookId === notebook.id ? (
+                {!settings.condensedView && (activeNotebookId === notebook.id && editingNotebookId === notebook.id ? (
                   <input
                     ref={el => notebookInputRefs.current[notebook.id] = el}
                     className="flex-1 min-w-0 bg-transparent outline-none text-sm notebook-input"
@@ -1433,16 +1454,35 @@ function App() {
                   >
                     {notebook.name}
                   </span>
+                ))}
+                {!settings.condensedView && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setItemToDelete({ type: 'notebook', id: notebook.id }); }}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-gray-400 hover:text-red-500"
+                  >
+                    <X size={12} />
+                  </button>
                 )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); setItemToDelete({ type: 'notebook', id: notebook.id }); }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-gray-400 hover:text-red-500"
-                >
-                  <X size={12} />
-                </button>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Bottom toolbar with condensed mode toggle */}
+        <div className="p-2 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <button 
+            onClick={() => setSettings(s => ({...s, condensedView: !s.condensedView}))} 
+            className="hover:bg-gray-200 dark:hover:bg-gray-700 p-2 rounded transition-colors" 
+            title={settings.condensedView ? "Expand view" : "Compact view"}
+          >
+            {settings.condensedView ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+          </button>
+          {!settings.condensedView && (
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span>v{APP_VERSION}</span>
+              {isSyncing && <span className="text-blue-400 animate-pulse">Syncing...</span>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1460,22 +1500,24 @@ function App() {
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => handleNavDrop(e, 'tab', index)}
                   onClick={() => selectTab(tab.id)}
-                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-t text-sm cursor-pointer transition-colors ${
+                  className={`group flex items-center gap-2 ${settings.condensedView ? 'px-2' : 'px-3'} py-1.5 rounded-t text-sm cursor-pointer transition-colors ${
                     getTabColorClasses(tab.color || 'gray', activeTabId === tab.id)
                   }`}
+                  title={settings.condensedView ? tab.name : undefined}
                 >
                   <span
                     className="cursor-pointer hover:opacity-80 tab-icon-trigger"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (activeTabId !== tab.id) return;
+                      if (settings.condensedView) return;
                       const pos = getPickerPosition(e.clientY, e.clientX);
                       setTabIconPicker(tabIconPicker?.id === tab.id ? null : { id: tab.id, top: pos.top, left: pos.left });
                     }}
                   >
                     {tab.icon || '📋'}
                   </span>
-                  {activeTabId === tab.id && editingTabId === tab.id ? (
+                  {!settings.condensedView && (activeTabId === tab.id && editingTabId === tab.id ? (
                     <input
                       ref={el => tabInputRefs.current[tab.id] = el}
                       className="w-20 bg-transparent outline-none tab-input"
@@ -1492,8 +1534,8 @@ function App() {
                     >
                       {tab.name}
                     </span>
-                  )}
-                  {activeTabId === tab.id && (
+                  ))}
+                  {!settings.condensedView && activeTabId === tab.id && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1541,9 +1583,19 @@ function App() {
                   saveToHistory={saveToHistory}
                   showNotification={showNotification}
                 />
-              ) : activePage.embedUrl ? (
+              ) : activePage.embedUrl || (['doc','sheet','slide','form','drawing','vid','pdf','site','script','drive','map'].includes(activePage.type) && activePage.driveFileId) ? (
                 <EmbedPage
-                  page={activePage}
+                  page={activePage.embedUrl ? activePage : {
+                    ...activePage,
+                    embedUrl: activePage.type === 'doc' ? `https://docs.google.com/document/d/${activePage.driveFileId}/edit` :
+                              activePage.type === 'sheet' ? `https://docs.google.com/spreadsheets/d/${activePage.driveFileId}/edit` :
+                              activePage.type === 'slide' ? `https://docs.google.com/presentation/d/${activePage.driveFileId}/edit` :
+                              activePage.type === 'form' ? `https://docs.google.com/forms/d/${activePage.driveFileId}/viewform` :
+                              activePage.type === 'drawing' ? `https://docs.google.com/drawings/d/${activePage.driveFileId}/edit` :
+                              activePage.type === 'vid' ? `https://vids.google.com/watch/${activePage.driveFileId}` :
+                              activePage.type === 'map' ? `https://www.google.com/maps/d/embed?mid=${activePage.driveFileId}` :
+                              `https://drive.google.com/file/d/${activePage.driveFileId}/preview`
+                  }}
                   onUpdate={(updates) => {
                     setData(prev => ({
                       ...prev,
@@ -1572,87 +1624,89 @@ function App() {
                 />
               ) : (
                 // Block page
-                <div className={`min-h-full ${getPageBgClass(activeTab?.color)}`}>
-                  {/* Page Header */}
-                  {activePage.cover && (
-                    <div className="h-48 w-full bg-cover bg-center" style={{ backgroundImage: `url(${activePage.cover})` }} />
-                  )}
-                  <div className="max-w-3xl mx-auto px-8 py-8">
-                    <div className="flex items-center gap-4 mb-6">
-                      <span
-                        className="text-4xl cursor-pointer hover:opacity-80 icon-picker-trigger"
-                        onClick={(e) => {
-                          const pos = getPickerPosition(e.clientY, e.clientX);
-                          setPageIconPicker(pageIconPicker?.pageId === activePage.id ? null : { pageId: activePage.id, top: pos.top, left: pos.left });
-                        }}
-                      >
-                        {activePage.icon || '📄'}
-                      </span>
-                      <input
-                        ref={titleInputRef}
-                        className="flex-1 text-3xl font-bold bg-transparent outline-none"
-                        value={activePage.name}
-                        onChange={(e) => updateLocalName('page', activePage.id, e.target.value)}
-                        onBlur={() => syncRenameToDrive('page', activePage.id)}
-                        placeholder="Untitled"
-                      />
-                    </div>
-
-                    {/* Blocks */}
-                    <div
-                      className="space-y-2"
-                      onDrop={handleDrop}
-                      onDragEnd={handleBlockDragEnd}
-                    >
-                      {rowsForEditor.length === 0 ? (
-                        <div className="min-h-[120px] border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
-                          Start typing or drop blocks here
+                <div className="min-h-full bg-gray-100 dark:bg-gray-900 p-4">
+                  <div className="max-w-4xl mx-auto min-h-[500px] bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden pb-10">
+                      {/* Page Header */}
+                      {activePage.cover && (
+                        <div className="h-48 w-full bg-cover bg-center rounded-t-lg" style={{ backgroundImage: `url(${activePage.cover})` }} />
+                      )}
+                      <div className="px-8 py-8">
+                        <div className="flex items-center gap-4 mb-6">
+                          <span
+                            className="text-4xl cursor-pointer hover:opacity-80 icon-picker-trigger"
+                            onClick={(e) => {
+                              const pos = getPickerPosition(e.clientY, e.clientX);
+                              setPageIconPicker(pageIconPicker?.pageId === activePage.id ? null : { pageId: activePage.id, top: pos.top, left: pos.left });
+                            }}
+                          >
+                            {activePage.icon || '📄'}
+                          </span>
+                          <input
+                            ref={titleInputRef}
+                            className="flex-1 text-3xl font-bold bg-transparent outline-none"
+                            value={activePage.name}
+                            onChange={(e) => updateLocalName('page', activePage.id, e.target.value)}
+                            onBlur={() => syncRenameToDrive('page', activePage.id)}
+                            placeholder="Untitled"
+                          />
                         </div>
-                      ) : (
-                        rowsForEditor.map((row) => (
-                          <div key={row.id} className="flex gap-4 group/row relative items-stretch">
-                            {row.columns.map((col) => (
-                              <div key={col.id} className="flex-1 min-w-[50px] space-y-2 flex flex-col">
-                                {col.blocks.map((block) => (
-                                  <BlockComponent
-                                    key={block.id}
-                                    block={block}
-                                    rowId={row.id}
-                                    colId={col.id}
-                                    onUpdate={handleUpdateBlock}
-                                    onDelete={handleRemoveBlock}
-                                    onInsertAfter={handleInsertBlockAfter}
-                                    autoFocusId={autoFocusId}
-                                    onMapConfig={(blockId, position) => {
-                                      setMapConfigBlockId(blockId);
-                                      setMapConfigPosition(position);
-                                    }}
-                                    onRequestFocus={handleRequestFocus}
-                                    isSelected={selectedBlockId === block.id}
-                                    onHandleClick={handleBlockHandleClick}
-                                    onFocus={handleBlockFocus}
-                                    onDragStart={handleBlockDragStart}
-                                    onDragOver={handleBlockDragOver}
-                                    onDrop={handleDrop}
-                                    dropTarget={dropTarget}
-                                    isLastBlock={totalBlocks === 1}
-                                  />
+
+                        {/* Blocks */}
+                        <div
+                          className="space-y-2"
+                          onDrop={handleDrop}
+                          onDragEnd={handleBlockDragEnd}
+                        >
+                          {rowsForEditor.length === 0 ? (
+                            <div className="min-h-[120px] border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
+                              Start typing or drop blocks here
+                            </div>
+                          ) : (
+                            rowsForEditor.map((row) => (
+                              <div key={row.id} className="flex gap-4 group/row relative items-stretch">
+                                {row.columns.map((col) => (
+                                  <div key={col.id} className="flex-1 min-w-[50px] space-y-2 flex flex-col">
+                                    {col.blocks.map((block) => (
+                                      <BlockComponent
+                                        key={block.id}
+                                        block={block}
+                                        rowId={row.id}
+                                        colId={col.id}
+                                        onUpdate={handleUpdateBlock}
+                                        onDelete={handleRemoveBlock}
+                                        onInsertAfter={handleInsertBlockAfter}
+                                        autoFocusId={autoFocusId}
+                                        onMapConfig={(blockId, position) => {
+                                          setMapConfigBlockId(blockId);
+                                          setMapConfigPosition(position);
+                                        }}
+                                        onRequestFocus={handleRequestFocus}
+                                        isSelected={selectedBlockId === block.id}
+                                        onHandleClick={handleBlockHandleClick}
+                                        onFocus={handleBlockFocus}
+                                        onDragStart={handleBlockDragStart}
+                                        onDragOver={handleBlockDragOver}
+                                        onDrop={handleDrop}
+                                        dropTarget={dropTarget}
+                                        isLastBlock={totalBlocks === 1}
+                                      />
+                                    ))}
+                                  </div>
                                 ))}
                               </div>
-                            ))}
-                          </div>
-                        ))
-                      )}
-                    </div>
+                            ))
+                          )}
+                        </div>
 
-                    {/* Add block button */}
-                    <button
-                      onClick={() => addBlock('text')}
-                      className="mt-4 flex items-center gap-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                    >
-                      <Plus size={16} />
-                      <span className="text-sm">Add a block</span>
-                    </button>
+                        {/* Add block button */}
+                        <button
+                          onClick={() => addBlock('text')}
+                          className="mt-4 flex items-center gap-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                        >
+                          <Plus size={16} />
+                          <span className="text-sm">Add a block</span>
+                        </button>
+                      </div>
                   </div>
                 </div>
               )
@@ -1786,7 +1840,7 @@ function App() {
               <div
                 key={c.name}
                 onClick={() => updateTabColor(activeTabMenu.id, c.name)}
-                className={`w-5 h-5 rounded-full cursor-pointer bg-${c.name}-500 hover:scale-125 transition-transform shadow-sm`}
+                className={`w-5 h-5 rounded-full cursor-pointer ${COLOR_BG_CLASSES[c.name]} hover:scale-125 transition-transform shadow-sm`}
               />
             ))}
           </div>
@@ -1853,7 +1907,7 @@ function App() {
                 <div
                   key={c.name}
                   onClick={() => updateBlockColor(blockMenu.id, c.name)}
-                  className={`w-5 h-5 rounded-full cursor-pointer bg-${c.name}-500 hover:scale-125 transition-transform shadow-sm`}
+                  className={`w-5 h-5 rounded-full cursor-pointer ${COLOR_BG_CLASSES[c.name]} hover:scale-125 transition-transform shadow-sm`}
                 />
               ))}
             </div>

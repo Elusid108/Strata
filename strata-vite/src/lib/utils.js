@@ -1,6 +1,23 @@
 import { COLORS } from './constants';
 
 /**
+ * Static color class mapping for Tailwind JIT compatibility
+ * These must be written as full static strings so Tailwind can detect them
+ */
+export const COLOR_BG_CLASSES = {
+  gray: 'bg-gray-500',
+  red: 'bg-red-500',
+  orange: 'bg-orange-500',
+  amber: 'bg-amber-500',
+  green: 'bg-green-500',
+  teal: 'bg-teal-500',
+  blue: 'bg-blue-500',
+  indigo: 'bg-indigo-500',
+  purple: 'bg-purple-500',
+  pink: 'bg-pink-500',
+};
+
+/**
  * Generate a random alphanumeric ID
  * @returns {string} A 9-character random ID
  */
