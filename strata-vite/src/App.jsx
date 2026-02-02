@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { APP_VERSION, DEFAULT_SCHEMA, DEFAULT_ROWS } from './lib/constants'
 import { generateId, generateUUID } from './lib/utils'
 import {
-  Plus, Trash2, GripVertical
+  Plus, Trash2, GripVertical, GoogleG
 } from './components/icons'
 import { BlockComponent } from './components/blocks'
 import { 
@@ -11,10 +11,74 @@ import {
   MermaidPageComponent, 
   MapBlock 
 } from './components/pages'
+import { checkAuthStatus, signIn, signOut, getOrCreateRootFolder } from './lib/google-api'
 
 function App() {
   // Current view tab
   const [activeTab, setActiveTab] = useState('blocks')
+
+  // ========== GOOGLE AUTH STATE ==========
+  const [user, setUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authError, setAuthError] = useState(null)
+  const [rootFolderId, setRootFolderId] = useState(null)
+
+  // Check auth status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        setAuthLoading(true)
+        const userInfo = await checkAuthStatus()
+        if (userInfo) {
+          setUser(userInfo)
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error)
+        setAuthError(error.message)
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+    checkAuth()
+  }, [])
+
+  const handleSignIn = async () => {
+    try {
+      setAuthLoading(true)
+      setAuthError(null)
+      const userInfo = await signIn()
+      setUser(userInfo)
+      setLastAction(`Signed in as ${userInfo.email}`)
+    } catch (error) {
+      console.error('Sign in failed:', error)
+      setAuthError(error.message)
+      setLastAction(`Sign in failed: ${error.message}`)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleSignOut = () => {
+    signOut()
+    setUser(null)
+    setRootFolderId(null)
+    setLastAction('Signed out')
+  }
+
+  const handleGetRootFolder = async () => {
+    try {
+      setAuthLoading(true)
+      const folderId = await getOrCreateRootFolder()
+      setRootFolderId(folderId)
+      setLastAction(`Root folder ID: ${folderId}`)
+    } catch (error) {
+      console.error('Get root folder failed:', error)
+      setAuthError(error.message)
+      setLastAction(`Get root folder failed: ${error.message}`)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
 
   // ========== BLOCKS TEST DATA ==========
   const [blocks, setBlocks] = useState([
@@ -220,6 +284,7 @@ C --> E[Deploy]`
     { id: 'table', label: 'Table', icon: '📊' },
     { id: 'mermaid', label: 'Code', icon: '</>' },
     { id: 'map', label: 'Map', icon: '🗺️' },
+    { id: 'auth', label: 'Google API', icon: '🔐' },
   ]
 
   return (
@@ -230,7 +295,7 @@ C --> E[Deploy]`
           Strata v{APP_VERSION} - Migration in Progress
         </h1>
         <p className="text-gray-600 dark:text-gray-400 text-center text-sm mt-1">
-          Section F Complete: Page Type Components extracted
+          Section G Complete: Google API Integration
         </p>
       </div>
 
@@ -346,6 +411,90 @@ C --> E[Deploy]`
                   disableScrollWheel={false}
                   locked={mapData.locked}
                 />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'auth' && (
+          <div className="h-full p-4 overflow-auto">
+            <div className="max-w-xl mx-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">
+                  Google API Integration Test
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  Section G: Test the Google Drive authentication and API integration.
+                </p>
+
+                {authError && (
+                  <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    {authError}
+                  </div>
+                )}
+
+                {authLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                    <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+                  </div>
+                ) : user ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                      {user.picture && (
+                        <img 
+                          src={user.picture} 
+                          alt={user.name} 
+                          className="w-12 h-12 rounded-full"
+                        />
+                      )}
+                      <div>
+                        <p className="font-semibold text-gray-800 dark:text-white">{user.name}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{user.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleGetRootFolder}
+                        className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                      >
+                        Get Root Folder
+                      </button>
+                      <button
+                        onClick={handleSignOut}
+                        className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        Sign Out
+                      </button>
+                    </div>
+
+                    {rootFolderId && (
+                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <p className="text-sm font-mono text-gray-700 dark:text-gray-300">
+                          <span className="font-semibold">Root Folder ID:</span><br />
+                          {rootFolderId}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600 dark:text-gray-400 mb-4">
+                      Sign in with Google to test the Drive API integration.
+                    </p>
+                    <button
+                      onClick={handleSignIn}
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <GoogleG size={20} />
+                      <span className="font-medium text-gray-700 dark:text-white">Sign in with Google</span>
+                    </button>
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-4">
+                      Note: You need to configure .env.local with your Google API credentials.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
