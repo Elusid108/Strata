@@ -140,3 +140,92 @@ export const normalizeListContent = (raw, listType) => {
   if (!raw.includes('<li>')) return `<li>${raw}</li>`;
   return raw;
 };
+
+/**
+ * Get Tailwind CSS classes for tab styling
+ * @param {string} colorName - The color name
+ * @param {boolean} isActive - Whether the tab is active
+ * @returns {string} Tailwind CSS classes
+ */
+export const getTabColorClasses = (colorName, isActive) => {
+  // Inactive tab colors - pastel in light mode, darker in dark mode
+  const colors = {
+    gray: 'bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200',
+    red: 'bg-red-100 hover:bg-red-200 text-red-800 dark:bg-red-900 dark:hover:bg-red-800 dark:text-red-200',
+    orange: 'bg-orange-100 hover:bg-orange-200 text-orange-800 dark:bg-orange-900 dark:hover:bg-orange-800 dark:text-orange-200',
+    amber: 'bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900 dark:hover:bg-amber-800 dark:text-amber-200',
+    green: 'bg-green-100 hover:bg-green-200 text-green-800 dark:bg-green-900 dark:hover:bg-green-800 dark:text-green-200',
+    teal: 'bg-teal-100 hover:bg-teal-200 text-teal-800 dark:bg-teal-900 dark:hover:bg-teal-800 dark:text-teal-200',
+    blue: 'bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-200',
+    indigo: 'bg-indigo-100 hover:bg-indigo-200 text-indigo-800 dark:bg-indigo-900 dark:hover:bg-indigo-800 dark:text-indigo-200',
+    purple: 'bg-purple-100 hover:bg-purple-200 text-purple-800 dark:bg-purple-900 dark:hover:bg-purple-800 dark:text-purple-200',
+    pink: 'bg-pink-100 hover:bg-pink-200 text-pink-800 dark:bg-pink-900 dark:hover:bg-pink-800 dark:text-pink-200',
+  };
+  // Active tab colors - solid colors (same in both modes)
+  const activeColors = {
+    gray: 'bg-gray-500 text-white', 
+    red: 'bg-red-500 text-white', 
+    orange: 'bg-orange-500 text-white',
+    amber: 'bg-amber-500 text-white', 
+    green: 'bg-green-600 text-white', 
+    teal: 'bg-teal-600 text-white',
+    blue: 'bg-blue-600 text-white', 
+    indigo: 'bg-indigo-600 text-white', 
+    purple: 'bg-purple-600 text-white',
+    pink: 'bg-pink-600 text-white',
+  };
+  return isActive ? activeColors[colorName] : colors[colorName];
+};
+
+/**
+ * Get Tailwind CSS classes for page background
+ * @param {string} colorName - The color name
+ * @returns {string} Tailwind CSS classes
+ */
+export const getPageBgClass = (colorName) => {
+  const map = {
+    gray: 'bg-gray-100 dark:bg-gray-800',
+    red: 'bg-red-100 dark:bg-red-900',
+    orange: 'bg-orange-100 dark:bg-orange-900',
+    amber: 'bg-amber-100 dark:bg-amber-900',
+    green: 'bg-green-100 dark:bg-green-900',
+    teal: 'bg-teal-100 dark:bg-teal-900',
+    blue: 'bg-blue-100 dark:bg-blue-900',
+    indigo: 'bg-indigo-100 dark:bg-indigo-900',
+    purple: 'bg-purple-100 dark:bg-purple-900',
+    pink: 'bg-pink-100 dark:bg-pink-900',
+  };
+  return map[colorName] || 'bg-white dark:bg-gray-900';
+};
+
+/**
+ * Clamp picker position within viewport bounds
+ * @param {number} top - Initial top position
+ * @param {number} left - Initial left position
+ * @param {number} width - Picker width (default 256)
+ * @param {number} height - Picker height (default 256)
+ * @returns {Object} Clamped position { top, left }
+ */
+export const getPickerPosition = (top, left, width = 256, height = 256) => {
+  return {
+    top: Math.max(0, Math.min(top, window.innerHeight - height)),
+    left: Math.max(0, Math.min(left, window.innerWidth - width))
+  };
+};
+
+/**
+ * Find a block in rows by ID
+ * @param {Array} rows - Array of row objects
+ * @param {string} blockId - Block ID to find
+ * @returns {Object|null} Found block or null
+ */
+export const findBlockInRows = (rows, blockId) => {
+  if (!rows || !rows.length) return null;
+  for (const row of rows) {
+    for (const col of row.columns) {
+      const b = col.blocks.find(block => block.id === blockId);
+      if (b) return b;
+    }
+  }
+  return null;
+};
