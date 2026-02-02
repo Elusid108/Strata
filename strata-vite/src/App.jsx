@@ -63,25 +63,25 @@ function App() {
     }
   })
 
-  // ========== MERMAID PAGE TEST DATA ==========
+  // ========== CODE PAGE TEST DATA ==========
   const [mermaidPage, setMermaidPage] = useState({
     id: 'mermaid-1',
     name: 'Diagram Demo',
-    icon: '📐',
+    icon: '</>',
     type: 'mermaid',
     codeType: 'mermaid',
     code: `graph TD
-    A[Start] --> B{Is it working?}
-    B -->|Yes| C[Great!]
-    B -->|No| D[Debug]
-    D --> B
-    C --> E[Deploy]`,
+A[Start] --> B{Is it working?}
+B -->|Yes| C[Great!]
+B -->|No| D[Debug]
+D --> B
+C --> E[Deploy]`,
     mermaidCode: `graph TD
-    A[Start] --> B{Is it working?}
-    B -->|Yes| C[Great!]
-    B -->|No| D[Debug]
-    D --> B
-    C --> E[Deploy]`
+A[Start] --> B{Is it working?}
+B -->|Yes| C[Great!]
+B -->|No| D[Debug]
+D --> B
+C --> E[Deploy]`
   })
 
   // ========== MAP TEST DATA ==========
@@ -218,7 +218,7 @@ function App() {
     { id: 'blocks', label: 'Blocks', icon: '📝' },
     { id: 'canvas', label: 'Canvas', icon: '🎨' },
     { id: 'table', label: 'Table', icon: '📊' },
-    { id: 'mermaid', label: 'Mermaid', icon: '📐' },
+    { id: 'mermaid', label: 'Code', icon: '</>' },
     { id: 'map', label: 'Map', icon: '🗺️' },
   ]
 

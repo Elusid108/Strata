@@ -84,6 +84,7 @@ const MermaidPageComponent = ({
   const transformRef = useRef({ x: 0, y: 0, scale: 1 });
   const persistViewportRef = useRef(null);
   const hasAppliedInitialFitRef = useRef(false);
+  const renderIdRef = useRef(0); // Guard against race conditions from double-render
   const savedViewport = page.mermaidViewport || { x: 0, y: 0, scale: 1 };
   const [transform, setTransform] = useState(savedViewport);
   const [dragInfo, setDragInfo] = useState(null);
@@ -265,6 +266,11 @@ const MermaidPageComponent = ({
       hasAppliedInitialFitRef.current = false;
       return;
     }
+    
+    // Increment render ID to cancel any in-progress renders
+    renderIdRef.current += 1;
+    const currentRenderId = renderIdRef.current;
+    
     // Reset the fit flag when chart code changes
     hasAppliedInitialFitRef.current = false;
     const el = diagramContainerRef.current;
@@ -288,13 +294,35 @@ const MermaidPageComponent = ({
       }
     }
     setMermaidError(null);
+    
     window.mermaid.run({ nodes: [pre] }).then(() => {
+      // Check if this render is still current (not superseded by another render)
+      if (currentRenderId !== renderIdRef.current) return;
+      
       // Wait for SVG to be rendered in the DOM
       const waitForSvg = () => {
+        // Check if still current render
+        if (currentRenderId !== renderIdRef.current) return;
+        
         const svg = el.querySelector('svg');
         if (svg && !hasAppliedInitialFitRef.current) {
+          // Set SVG dimensions based on viewBox to ensure proper sizing
+          const viewBox = svg.getAttribute('viewBox');
+          if (viewBox) {
+            const parts = viewBox.split(/\s+/);
+            const vbWidth = parseFloat(parts[2]);
+            const vbHeight = parseFloat(parts[3]);
+            if (vbWidth > 0 && vbHeight > 0) {
+              svg.setAttribute('width', vbWidth);
+              svg.setAttribute('height', vbHeight);
+            }
+          }
+          
           // Use requestAnimationFrame to ensure layout is complete
           requestAnimationFrame(() => {
+            // Final check if still current render
+            if (currentRenderId !== renderIdRef.current) return;
+            
             if (!hasAppliedInitialFitRef.current && diagramContainerRef.current && viewportRef.current) {
               const fitTransform = calculateZoomToFit();
               setTransform(fitTransform);
@@ -308,6 +336,8 @@ const MermaidPageComponent = ({
       };
       waitForSvg();
     }).catch(() => {
+      // Only set error if this is still the current render
+      if (currentRenderId !== renderIdRef.current) return;
       setMermaidError('Invalid Mermaid syntax');
       hasAppliedInitialFitRef.current = false;
     });
