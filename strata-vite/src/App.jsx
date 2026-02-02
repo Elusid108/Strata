@@ -53,6 +53,8 @@ import {
   MapBlock,
   MapConfigPopup 
 } from './components/pages';
+import { EmbedPage } from './components/embeds';
+import { parseEmbedUrl } from './lib/embed-utils';
 
 // Hooks
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -814,6 +816,137 @@ function App() {
     triggerStructureSync();
   }, [activeTabId, activeNotebookId, saveToHistory, data, setData, showNotification, triggerStructureSync]);
 
+  const addEmbedPageFromUrl = useCallback((rawUrl) => {
+    if (!activeTabId || !rawUrl) return false;
+    
+    const parsed = parseEmbedUrl(rawUrl);
+    if (!parsed) {
+      showNotification('Could not parse Google Drive or PDF URL', 'error');
+      return false;
+    }
+    
+    saveToHistory();
+    const newPage = {
+      id: generateId(),
+      name: parsed.type === 'site' ? 'Google Site' : `Google ${parsed.typeName}`,
+      type: parsed.type,
+      embedUrl: parsed.embedUrl,
+      ...(parsed.fileId && { driveFileId: parsed.fileId }),
+      webViewLink: rawUrl,
+      ...(parsed.type === 'pdf' && !parsed.fileId && { originalUrl: rawUrl }),
+      icon: parsed.icon,
+      createdAt: Date.now()
+    };
+    
+    const newData = {
+      ...data,
+      notebooks: data.notebooks.map(nb => 
+        nb.id !== activeNotebookId ? nb : {
+          ...nb,
+          tabs: nb.tabs.map(tab => 
+            tab.id !== activeTabId ? tab : {
+              ...tab,
+              pages: [...tab.pages, newPage],
+              activePageId: newPage.id
+            }
+          )
+        }
+      )
+    };
+    setData(newData);
+    setActivePageId(newPage.id);
+    showNotification(`Google ${parsed.typeName} added`, 'success');
+    triggerStructureSync();
+    return true;
+  }, [activeTabId, activeNotebookId, saveToHistory, data, setData, showNotification, triggerStructureSync]);
+
+  const addGooglePage = useCallback((file) => {
+    if (!activeTabId || !file) return;
+    
+    let icon, typeName, pageType;
+    const mimeType = file.mimeType || '';
+    
+    if (mimeType === 'application/vnd.google-apps.document') {
+      icon = '📄'; typeName = 'Doc'; pageType = 'doc';
+    } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+      icon = '📊'; typeName = 'Sheet'; pageType = 'sheet';
+    } else if (mimeType === 'application/vnd.google-apps.presentation') {
+      icon = '📽️'; typeName = 'Slides'; pageType = 'slide';
+    } else if (mimeType === 'application/vnd.google-apps.form') {
+      icon = '📋'; typeName = 'Form'; pageType = 'form';
+    } else if (mimeType === 'application/vnd.google-apps.drawing') {
+      icon = '🖌️'; typeName = 'Drawing'; pageType = 'drawing';
+    } else if (mimeType === 'application/vnd.google-apps.map') {
+      icon = '🗺️'; typeName = 'Map'; pageType = 'map';
+    } else if (mimeType === 'application/vnd.google-apps.site') {
+      icon = '🌐'; typeName = 'Site'; pageType = 'site';
+    } else if (mimeType === 'application/vnd.google-apps.script') {
+      icon = '📜'; typeName = 'Apps Script'; pageType = 'script';
+    } else if (mimeType === 'application/vnd.google-apps.vid') {
+      icon = '🎬'; typeName = 'Vid'; pageType = 'vid';
+    } else if (mimeType === 'application/pdf') {
+      icon = '📑'; typeName = 'PDF'; pageType = 'pdf';
+    } else {
+      icon = '📁'; typeName = 'File'; pageType = 'drive';
+    }
+    
+    let embedUrl;
+    if (pageType === 'doc') {
+      embedUrl = `https://docs.google.com/document/d/${file.id}/edit`;
+    } else if (pageType === 'sheet') {
+      embedUrl = `https://docs.google.com/spreadsheets/d/${file.id}/edit`;
+    } else if (pageType === 'slide') {
+      embedUrl = `https://docs.google.com/presentation/d/${file.id}/edit`;
+    } else if (pageType === 'form') {
+      embedUrl = `https://docs.google.com/forms/d/${file.id}/viewform`;
+    } else if (pageType === 'drawing') {
+      embedUrl = `https://docs.google.com/drawings/d/${file.id}/edit`;
+    } else if (pageType === 'map') {
+      embedUrl = `https://www.google.com/maps/d/embed?mid=${file.id}`;
+    } else if (pageType === 'site') {
+      embedUrl = (file.webViewLink || file.url || '').split('?')[0] || `https://drive.google.com/file/d/${file.id}/preview`;
+    } else if (pageType === 'script') {
+      embedUrl = `https://script.google.com/macros/s/${file.id}/edit`;
+    } else if (pageType === 'vid') {
+      embedUrl = `https://vids.google.com/watch/${file.id}`;
+    } else {
+      embedUrl = `https://drive.google.com/file/d/${file.id}/preview`;
+    }
+    
+    saveToHistory();
+    const newPage = {
+      id: generateId(),
+      name: file.name || `Google ${typeName}`,
+      type: pageType,
+      embedUrl,
+      driveFileId: file.id,
+      webViewLink: file.webViewLink || file.url,
+      mimeType: file.mimeType,
+      icon,
+      createdAt: Date.now()
+    };
+    
+    const newData = {
+      ...data,
+      notebooks: data.notebooks.map(nb => 
+        nb.id !== activeNotebookId ? nb : {
+          ...nb,
+          tabs: nb.tabs.map(tab => 
+            tab.id !== activeTabId ? tab : {
+              ...tab,
+              pages: [...tab.pages, newPage],
+              activePageId: newPage.id
+            }
+          )
+        }
+      )
+    };
+    setData(newData);
+    setActivePageId(newPage.id);
+    showNotification(`${file.name || 'Google ' + typeName} added`, 'success');
+    triggerStructureSync();
+  }, [activeTabId, activeNotebookId, saveToHistory, data, setData, showNotification, triggerStructureSync]);
+
   // ==================== DELETE OPERATIONS ====================
   
   const executeDelete = useCallback(async (type, id) => {
@@ -1409,32 +1542,34 @@ function App() {
                   showNotification={showNotification}
                 />
               ) : activePage.embedUrl ? (
-                <div className="h-full flex flex-col">
-                  <div className="flex-shrink-0 p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{activePage.icon || '📄'}</span>
-                      <h1 className="text-xl font-semibold">{activePage.name}</h1>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setEditEmbedUrl(activePage.embedUrl || '');
-                        setShowEditEmbed(true);
-                      }}
-                      className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
-                    >
-                      <Edit3 size={14} className="inline mr-1" />
-                      Edit URL
-                    </button>
-                  </div>
-                  <div className="flex-1">
-                    <iframe
-                      src={activePage.embedUrl}
-                      className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                </div>
+                <EmbedPage
+                  page={activePage}
+                  onUpdate={(updates) => {
+                    setData(prev => ({
+                      ...prev,
+                      notebooks: prev.notebooks.map(nb => 
+                        nb.id !== activeNotebookId ? nb : {
+                          ...nb,
+                          tabs: nb.tabs.map(tab => 
+                            tab.id !== activeTabId ? tab : {
+                              ...tab,
+                              pages: tab.pages.map(p =>
+                                p.id === activePage.id ? { ...p, ...updates } : p
+                              )
+                            }
+                          )
+                        }
+                      )
+                    }));
+                  }}
+                  onToggleStar={() => toggleStar(activePage.id, activeNotebookId, activeTabId)}
+                  onEditUrl={() => {
+                    setEditEmbedName(activePage.name);
+                    setEditEmbedUrl(activePage.originalUrl || activePage.embedUrl);
+                    setShowEditEmbed(true);
+                  }}
+                  isStarred={activePage.starred}
+                />
               ) : (
                 // Block page
                 <div className={`min-h-full ${getPageBgClass(activeTab?.color)}`}>
@@ -1556,6 +1691,9 @@ function App() {
                       <div className="border-t border-gray-100 dark:border-gray-700 my-1"></div>
                       <button onClick={() => { addCodePage(); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm">
                         <span className="text-lg">&lt;/&gt;</span> Code Page
+                      </button>
+                      <button onClick={() => { setShowDriveUrlModal(true); setShowPageTypeMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 text-sm">
+                        <img src={DRIVE_LOGO_URL} alt="" className="w-5 h-5 object-contain" /> Drive URL
                       </button>
                     </div>
                   )}
@@ -1915,6 +2053,110 @@ function App() {
                 className="w-full py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Drive URL Modal */}
+      {showDriveUrlModal && (
+        <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-xl flex items-center gap-3 dark:text-white">
+                <img src={DRIVE_LOGO_URL} alt="" className="w-8 h-8 object-contain" /> Add Drive URL
+              </h3>
+              <button 
+                onClick={() => { setShowDriveUrlModal(false); setDriveUrlModalValue(''); }}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <X size={20} className="dark:text-white" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <button 
+                onClick={() => {
+                  // Close modal first so picker is visible
+                  setShowDriveUrlModal(false);
+                  setDriveUrlModalValue('');
+                  // Google Drive Picker integration
+                  if (typeof GoogleAPI !== 'undefined' && GoogleAPI.showDrivePicker) {
+                    GoogleAPI.showDrivePicker((file) => {
+                      addGooglePage(file);
+                    });
+                  } else {
+                    showNotification('Drive Picker not available', 'error');
+                  }
+                }}
+                className="w-full py-3 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
+              >
+                <FolderOpen size={18} /> Browse
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+              <span className="text-sm text-gray-400">OR</span>
+              <div className="flex-1 h-px bg-gray-200 dark:bg-gray-600"></div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Compatible types</label>
+              <div className="grid grid-cols-5 gap-2">
+                {DRIVE_SERVICE_ICONS.map((item) => (
+                  <div key={item.type} className="flex flex-col items-center gap-1">
+                    <img src={item.url} alt={item.name} className="w-10 h-10 object-contain rounded" />
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">{item.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">URL</label>
+              <input 
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+                placeholder="https://docs.google.com/... or https://drive.google.com/... or PDF URL"
+                value={driveUrlModalValue}
+                onChange={(e) => setDriveUrlModalValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && driveUrlModalValue) {
+                    if (addEmbedPageFromUrl(driveUrlModalValue)) {
+                      setShowDriveUrlModal(false);
+                      setDriveUrlModalValue('');
+                    }
+                  } else if (e.key === 'Escape') {
+                    setShowDriveUrlModal(false);
+                    setDriveUrlModalValue('');
+                  }
+                }}
+                autoFocus
+              />
+              <p className="text-xs text-gray-400 mt-2">
+                Paste a link to a Google Doc, Sheet, Slides, Form, Drawing, Site, PDF, or any Drive file shared with you.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => { setShowDriveUrlModal(false); setDriveUrlModalValue(''); }}
+                className="px-5 py-2 font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  if (addEmbedPageFromUrl(driveUrlModalValue)) {
+                    setShowDriveUrlModal(false);
+                    setDriveUrlModalValue('');
+                  }
+                }}
+                disabled={!driveUrlModalValue}
+                className="px-5 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Page
               </button>
             </div>
           </div>
