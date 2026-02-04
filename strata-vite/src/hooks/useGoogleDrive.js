@@ -160,9 +160,11 @@ export function useGoogleDrive(data, setData, showNotification) {
             // Sync pages
             for (const page of tab.pages) {
               const pageType = page.type || 'block';
-              const isGooglePage = ['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType);
+              // Google/embed pages that link to external files (not stored as JSON)
+              const isGooglePage = ['doc', 'sheet', 'slide', 'form', 'drawing', 'vid', 'pdf', 'map', 'site', 'script', 'drive'].includes(pageType);
               
-              if (!isGooglePage && !page.driveFileId) {
+              // Skip pages that have an embedUrl (they're external links, not JSON content)
+              if (!isGooglePage && !page.driveFileId && !page.embedUrl) {
                 try {
                   const fileId = await GoogleAPI.syncPageToDrive(page, tabFolderId);
                   if (!driveIdUpdates[notebook.id]) driveIdUpdates[notebook.id] = { tabs: {} };
@@ -236,7 +238,8 @@ export function useGoogleDrive(data, setData, showNotification) {
       }
     };
 
-    const syncTimeout = setTimeout(syncStructure, 5000);
+    // Reduced delay for faster sync (localStorage provides immediate backup now)
+    const syncTimeout = setTimeout(syncStructure, 1000);
     return () => clearTimeout(syncTimeout);
   }, [structureVersion, isAuthenticated, isLoadingAuth, driveRootFolderId, data, setData]);
 
@@ -254,9 +257,11 @@ export function useGoogleDrive(data, setData, showNotification) {
           
           for (const page of tab.pages) {
             const pageType = page.type || 'block';
-            const isGooglePage = ['doc', 'sheet', 'slide', 'pdf', 'drive'].includes(pageType);
+            // Google/embed pages that link to external files (not stored as JSON)
+            const isGooglePage = ['doc', 'sheet', 'slide', 'form', 'drawing', 'vid', 'pdf', 'map', 'site', 'script', 'drive'].includes(pageType);
             
-            if (!isGooglePage && page.driveFileId) {
+            // Only sync content for non-Google pages that have a driveFileId (JSON storage)
+            if (!isGooglePage && page.driveFileId && !page.embedUrl) {
               try {
                 await GoogleAPI.syncPageToDrive(page, tabFolderId);
               } catch (error) {

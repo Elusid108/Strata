@@ -74,7 +74,8 @@ export const getFormattedDate = () => {
  * @returns {Object} Object containing { notebook, tab, page }
  */
 export const getActiveContext = (data, notebookId, tabId, pageId) => {
-  const notebook = data.notebooks?.find(n => n.id === notebookId) ?? null;
+  if (!data?.notebooks) return { notebook: null, tab: null, page: null };
+  const notebook = data.notebooks.find(n => n.id === notebookId) ?? null;
   const tab = notebook?.tabs?.find(t => t.id === tabId) ?? null;
   const page = tab?.pages?.find(p => p.id === pageId) ?? null;
   return { notebook, tab, page };

@@ -53,10 +53,7 @@ export function EmbedPage({
   // Handle zoom change
   const handleZoomChange = (level) => {
     setZoomLevel(level);
-    // Optionally persist to page data
-    if (onUpdate) {
-      onUpdate({ zoomLevel: level });
-    }
+    if (onUpdate) onUpdate({ zoomLevel: level });
   };
   
   // Render the appropriate embed component based on page type

@@ -206,57 +206,51 @@ function App() {
     const loadData = async () => {
       if (isLoadingAuth) return;
 
+      // Helper to set active IDs from data
+      const setActiveFromData = (loadedData) => {
+        if (!loadedData?.notebooks?.length) return false;
+        const firstNb = loadedData.notebooks[0];
+        setActiveNotebookId(firstNb.id);
+        const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
+        setActiveTabId(tabId);
+        if (tabId) {
+          const tab = firstNb.tabs.find(t => t.id === tabId);
+          if (tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+        }
+        return true;
+      };
+
+      // Always try localStorage first for instant load
+      const localData = loadFromLocalStorage();
+      if (localData && localData.notebooks?.length > 0) {
+        setData(localData);
+        setActiveFromData(localData);
+      }
+
       if (isAuthenticated) {
+        // Then sync from Drive in background (will merge/update if needed)
         try {
           const driveData = await loadFromDrive();
           if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
-            setData(driveData);
-            const firstNb = driveData.notebooks[0];
-            setActiveNotebookId(firstNb.id);
-            const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-            setActiveTabId(tabId);
-            if (tabId) {
-              const tab = firstNb.tabs.find(t => t.id === tabId);
-              if (tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+            // Only update if we didn't have local data, or if Drive data is different
+            if (!localData || !localData.notebooks?.length) {
+              setData(driveData);
+              setActiveFromData(driveData);
             }
-          } else {
-            // No Drive data, check localStorage
-            const localData = loadFromLocalStorage();
-            if (localData && localData.notebooks?.length > 0) {
-              setData(localData);
-              const firstNb = localData.notebooks[0];
-              setActiveNotebookId(firstNb.id);
-              const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-              setActiveTabId(tabId);
-              if (tabId) {
-                const tab = firstNb.tabs.find(t => t.id === tabId);
-                if (tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
-              }
-            } else {
-              // Use initial data
-              setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
-              setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
-              setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
-            }
+            // Note: If local data exists, we keep it and let the sync mechanism handle updates
+            // This prevents the "reset" behavior on refresh
           }
         } catch (error) {
           console.error('Error loading from Drive:', error);
-          showNotification('Failed to load from Drive. Using local storage.', 'error');
-          loadFromLocalStorage();
-        }
-      } else {
-        // Not authenticated - use localStorage
-        const localData = loadFromLocalStorage();
-        if (localData && localData.notebooks?.length > 0) {
-          const firstNb = localData.notebooks[0];
-          setActiveNotebookId(firstNb.id);
-          const tabId = firstNb.activeTabId || firstNb.tabs[0]?.id;
-          setActiveTabId(tabId);
-          if (tabId) {
-            const tab = firstNb.tabs.find(t => t.id === tabId);
-            if (tab) setActivePageId(tab.activePageId || tab.pages[0]?.id);
+          if (!localData || !localData.notebooks?.length) {
+            showNotification('Failed to load from Drive.', 'error');
           }
-        } else {
+        }
+      }
+
+      // Fallback to initial data if nothing loaded
+      if (!localData || !localData.notebooks?.length) {
+        if (!isAuthenticated) {
           setActiveNotebookId(INITIAL_DATA.notebooks[0].id);
           setActiveTabId(INITIAL_DATA.notebooks[0].tabs[0].id);
           setActivePageId(INITIAL_DATA.notebooks[0].tabs[0].pages[0].id);
@@ -826,9 +820,15 @@ function App() {
   }, [activeTabId, activeNotebookId, saveToHistory, data, setData, showNotification, triggerStructureSync]);
 
   const addEmbedPageFromUrl = useCallback((rawUrl) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:addEmbedPageFromUrl-entry',message:'addEmbedPageFromUrl called',data:{rawUrl,hasActiveTabId:!!activeTabId,activeTabId,activeNotebookId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ADD1'})}).catch(()=>{});
+    // #endregion
     if (!activeTabId || !rawUrl) return false;
     
     const parsed = parseEmbedUrl(rawUrl);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:addEmbedPageFromUrl-parsed',message:'parseEmbedUrl result',data:{parsed,rawUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ADD2'})}).catch(()=>{});
+    // #endregion
     if (!parsed) {
       showNotification('Could not parse Google Drive or PDF URL', 'error');
       return false;
@@ -847,6 +847,10 @@ function App() {
       createdAt: Date.now()
     };
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:addEmbedPageFromUrl-newPage',message:'Creating new page',data:{newPage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ADD3'})}).catch(()=>{});
+    // #endregion
+    
     const newData = {
       ...data,
       notebooks: data.notebooks.map(nb => 
@@ -864,12 +868,18 @@ function App() {
     };
     setData(newData);
     setActivePageId(newPage.id);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:addEmbedPageFromUrl-success',message:'Page added successfully',data:{newPageId:newPage.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ADD4'})}).catch(()=>{});
+    // #endregion
     showNotification(`Google ${parsed.typeName} added`, 'success');
     triggerStructureSync();
     return true;
   }, [activeTabId, activeNotebookId, saveToHistory, data, setData, showNotification, triggerStructureSync]);
 
   const addGooglePage = useCallback((file) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:addGooglePage-entry',message:'addGooglePage called',data:{file,hasActiveTabId:!!activeTabId,activeTabId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'ADD5'})}).catch(()=>{});
+    // #endregion
     if (!activeTabId || !file) return;
     
     let icon, typeName, pageType;
@@ -1583,19 +1593,9 @@ function App() {
                   saveToHistory={saveToHistory}
                   showNotification={showNotification}
                 />
-              ) : activePage.embedUrl || (['doc','sheet','slide','form','drawing','vid','pdf','site','script','drive','map'].includes(activePage.type) && activePage.driveFileId) ? (
+              ) : activePage.embedUrl ? (
                 <EmbedPage
-                  page={activePage.embedUrl ? activePage : {
-                    ...activePage,
-                    embedUrl: activePage.type === 'doc' ? `https://docs.google.com/document/d/${activePage.driveFileId}/edit` :
-                              activePage.type === 'sheet' ? `https://docs.google.com/spreadsheets/d/${activePage.driveFileId}/edit` :
-                              activePage.type === 'slide' ? `https://docs.google.com/presentation/d/${activePage.driveFileId}/edit` :
-                              activePage.type === 'form' ? `https://docs.google.com/forms/d/${activePage.driveFileId}/viewform` :
-                              activePage.type === 'drawing' ? `https://docs.google.com/drawings/d/${activePage.driveFileId}/edit` :
-                              activePage.type === 'vid' ? `https://vids.google.com/watch/${activePage.driveFileId}` :
-                              activePage.type === 'map' ? `https://www.google.com/maps/d/embed?mid=${activePage.driveFileId}` :
-                              `https://drive.google.com/file/d/${activePage.driveFileId}/preview`
-                  }}
+                  page={activePage}
                   onUpdate={(updates) => {
                     setData(prev => ({
                       ...prev,
@@ -1622,6 +1622,26 @@ function App() {
                   }}
                   isStarred={activePage.starred}
                 />
+              ) : ['doc','sheet','slide','form','drawing','vid','pdf','site','script','drive'].includes(activePage.type) ? (
+                // Embed-type page missing its embed URL - show reconnect message
+                <div className="h-full flex flex-col items-center justify-center gap-4 text-gray-500 dark:text-gray-400 p-8">
+                  <div className="text-6xl">{activePage.icon || '📄'}</div>
+                  <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">{activePage.name}</h2>
+                  <p className="text-center max-w-md">
+                    This {activePage.type === 'doc' ? 'Google Doc' : 
+                          activePage.type === 'sheet' ? 'Google Sheet' :
+                          activePage.type === 'slide' ? 'Google Slides' :
+                          activePage.type === 'form' ? 'Google Form' :
+                          activePage.type === 'drawing' ? 'Google Drawing' :
+                          activePage.type === 'vid' ? 'Google Video' :
+                          activePage.type === 'pdf' ? 'PDF' :
+                          'embedded file'} needs to be re-linked.
+                    The original file reference was lost during sync.
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    Delete this page and add a new one using the Drive URL option.
+                  </p>
+                </div>
               ) : (
                 // Block page
                 <div className="min-h-full bg-gray-100 dark:bg-gray-900 p-4">

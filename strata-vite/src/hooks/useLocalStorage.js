@@ -62,10 +62,9 @@ export function useLocalStorage(isAuthenticated, isLoadingAuth) {
       // Always save settings
       localStorage.setItem('note-app-settings-v1', JSON.stringify(settings));
       
-      // Only save data to localStorage if not authenticated
-      if (!isAuthenticated) {
-        localStorage.setItem('note-app-data-v1', JSON.stringify(data));
-      }
+      // Always save data to localStorage as backup (even when authenticated)
+      // This provides immediate persistence and faster recovery on page refresh
+      localStorage.setItem('note-app-data-v1', JSON.stringify(data));
     }, 500);
 
     return () => {

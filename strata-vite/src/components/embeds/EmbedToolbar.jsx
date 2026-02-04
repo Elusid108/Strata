@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Star, Edit3, Eye, ZoomIn, ZoomOut, ExternalLink } from '../icons';
+import { Star, Edit3, ZoomIn, ZoomOut, ExternalLink } from '../icons';
 import { shouldShowEditToggle, shouldShowZoomControls, getTypeDisplayName } from '../../lib/embed-utils';
 import { DRIVE_SERVICE_ICONS } from '../../lib/constants';
 
@@ -40,83 +39,81 @@ export function EmbedToolbar({
   };
 
   return (
-    <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800">
-      {/* Left: Icon, Title, Type */}
-      <div className="flex items-center gap-3">
+    <div className="flex-shrink-0 relative px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800">
+      {/* Left: Icon, Title, Type, Star */}
+      <div className="flex items-center gap-2">
         {serviceIcon?.url ? (
-          <img src={serviceIcon.url} alt={typeName} className="w-6 h-6" />
+          <img src={serviceIcon.url} alt={typeName} className="w-5 h-5" />
         ) : (
-          <span className="text-2xl">{page?.icon || '📄'}</span>
+          <span className="text-xl">{page?.icon || '📄'}</span>
         )}
         <div className="flex flex-col">
-          <h1 className="text-lg font-semibold dark:text-white">{page?.name || 'Untitled'}</h1>
+          <h1 className="text-base font-semibold dark:text-white">{page?.name || 'Untitled'}</h1>
           <span className="text-xs text-gray-500 dark:text-gray-400">{typeName}</span>
         </div>
-        
         {/* Star button */}
         <button
           onClick={onToggleStar}
-          className={`p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+          className={`p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
             isStarred ? 'text-yellow-500' : 'text-gray-400'
           }`}
           title={isStarred ? 'Unstar' : 'Star'}
         >
-          <Star size={18} fill={isStarred ? 'currentColor' : 'none'} />
+          <Star size={16} fill={isStarred ? 'currentColor' : 'none'} />
         </button>
       </div>
       
-      {/* Right: Controls */}
+      {/* Center: Zoom Controls (centered when visible) */}
+      {showZoom && (
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
+          <button
+            onClick={handleZoomOut}
+            disabled={zoomLevel <= 50}
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-gray-400"
+            title="Zoom out"
+          >
+            <ZoomOut size={14} />
+          </button>
+          <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[48px] text-center">
+            {zoomLevel}%
+          </span>
+          <button
+            onClick={handleZoomIn}
+            disabled={zoomLevel >= 200}
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-gray-400"
+            title="Zoom in"
+          >
+            <ZoomIn size={14} />
+          </button>
+          <button
+            onClick={() => onZoomChange(100)}
+            className={`px-2 py-0.5 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 ${zoomLevel === 100 ? 'opacity-60' : ''}`}
+            title="Reset to 100%"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+      
+      {/* Right: Edit/Preview pill, Popout, Edit URL */}
       <div className="flex items-center gap-2">
-        {/* Edit/Preview Toggle */}
+        {/* Edit/Preview Toggle (pill - where zoom was) */}
         {showEditToggle && (
-          <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+          <div className="flex items-center gap-2">
+            <span className={`text-sm font-medium ${viewMode === 'edit' ? 'text-blue-500 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Edit</span>
             <button
-              onClick={() => onViewModeChange('edit')}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
-                viewMode === 'edit'
-                  ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
+              type="button"
+              role="switch"
+              aria-checked={viewMode === 'preview'}
+              onClick={() => onViewModeChange(viewMode === 'edit' ? 'preview' : 'edit')}
+              className="relative w-11 h-6 rounded-full bg-blue-500 dark:bg-blue-600 p-1 shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
             >
-              <Edit3 size={14} />
-              Edit
+              <span
+                className="block w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ease-out"
+                style={{ transform: viewMode === 'edit' ? 'translateX(0)' : 'translateX(20px)' }}
+              />
             </button>
-            <button
-              onClick={() => onViewModeChange('preview')}
-              className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
-                viewMode === 'preview'
-                  ? 'bg-white dark:bg-gray-600 shadow text-gray-900 dark:text-white'
-                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              <Eye size={14} />
-              Preview
-            </button>
-          </div>
-        )}
-        
-        {/* Zoom Controls */}
-        {showZoom && (
-          <div className="flex items-center gap-1 ml-2">
-            <button
-              onClick={handleZoomOut}
-              disabled={zoomLevel <= 50}
-              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-gray-400"
-              title="Zoom out"
-            >
-              <ZoomOut size={16} />
-            </button>
-            <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[48px] text-center">
-              {zoomLevel}%
-            </span>
-            <button
-              onClick={handleZoomIn}
-              disabled={zoomLevel >= 200}
-              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-gray-400"
-              title="Zoom in"
-            >
-              <ZoomIn size={16} />
-            </button>
+            <span className={`text-sm font-medium ${viewMode === 'preview' ? 'text-blue-500 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Preview</span>
           </div>
         )}
         
@@ -126,19 +123,19 @@ export function EmbedToolbar({
             href={page.webViewLink || page.embedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400"
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400"
             title="Open in new tab"
           >
-            <ExternalLink size={16} />
+            <ExternalLink size={14} />
           </a>
         )}
         
         {/* Edit URL button */}
         <button
           onClick={onEditUrl}
-          className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 flex items-center gap-1.5"
+          className="px-2.5 py-1 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 flex items-center gap-1.5"
         >
-          <Edit3 size={14} />
+          <Edit3 size={12} />
           Edit URL
         </button>
       </div>
