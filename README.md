@@ -1,38 +1,55 @@
 # Strata
 
-A modern, block-based note-taking web application with Google Drive integration. Designed to be hosted on GitHub Pages or any static file server.
+A modern, block-based note-taking web application with Google Drive integration. Built with Vite + React + Tailwind CSS.
 
 ## Quick Start
 
-1. Open `index.html` in a web browser (or serve with a local server)
-2. For local development, use a simple HTTP server:
+1. Install dependencies:
    ```bash
-   # Python 3
-   python -m http.server 8000
-   
-   # Node.js (npx)
-   npx serve
-   
-   # VS Code Live Server extension
+   npm install
+   ```
+
+2. Set up environment variables:
+   ```bash
+   cp .env.example .env.local
+   # Edit .env.local with your Google API credentials
+   ```
+
+3. Start development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Build for production:
+   ```bash
+   npm run build
+   npm run preview  # Test production build locally
    ```
 
 ## File Structure
 
 ```
 Strata/
-├── index.html          # Main HTML entry point
-├── styles.css          # Custom CSS styles (dark mode, animations, etc.)
-├── app.js              # React application (JSX, uses Babel for transpilation)
-├── google-api.js        # Google Drive API helper module
-├── reconciler.js        # Remote-first boot logic and structure reconciliation
-├── migration.js          # Migration script to convert old structure to UID system
-├── config.js            # Google API credentials (create from config.example.js)
-├── config.example.js    # Template for config.js
-├── .gitignore           # Excludes config.js from git
-└── README.md            # This file
+├── index.html           # HTML entry point
+├── package.json         # Dependencies and scripts
+├── vite.config.js       # Vite configuration
+├── .env.example         # Environment variables template
+├── src/
+│   ├── App.jsx          # Main React application
+│   ├── main.jsx         # React entry point
+│   ├── index.css        # Tailwind + custom styles
+│   ├── components/
+│   │   ├── blocks/      # Block components (ContentBlock, ListBlock, etc.)
+│   │   ├── embeds/      # Google Drive embed components
+│   │   ├── icons/       # Icon components
+│   │   ├── pages/       # Page type components (Canvas, Table, Mermaid, Map)
+│   │   └── ui/          # UI components (SlashMenu, Toolbar, etc.)
+│   ├── hooks/           # Custom React hooks
+│   └── lib/             # Utilities, constants, Google API integration
+├── public/              # Static assets
+├── dist/                # Production build output (generated)
+└── config.example.js    # Legacy config template (for upgrading users)
 ```
-
-Note: index.html is self-contained (inline app + styles). app.js and styles.css are kept for development/edit convenience; config.js and google-api.js are still loaded externally.
 
 ## Features
 
@@ -92,13 +109,13 @@ Strata supports **Google Drive** as the primary storage backend, with localStora
    - Restrict to "Google Drive API" (recommended)
 
 4. **Configure the App:**
-   - Copy `config.example.js` to `config.js`
-   - Replace `YOUR_CLIENT_ID_HERE` with your OAuth Client ID
-   - Replace `YOUR_API_KEY_HERE` with your API Key
+   - Copy `.env.example` to `.env.local`
+   - Set `VITE_GOOGLE_CLIENT_ID` to your OAuth Client ID
+   - Set `VITE_GOOGLE_API_KEY` to your API Key
 
-5. **Deploy:**
-   - Ensure `config.js` is in `.gitignore` (already configured)
-   - Deploy to GitHub Pages or your static host
+5. **Build and Deploy:**
+   - Run `npm run build` to create production build in `dist/`
+   - Deploy the `dist/` folder to GitHub Pages or your static host
    - Users will sign in with Google on first use
 
 ### Same-Device Cache (v2.6.4+)
@@ -113,14 +130,14 @@ If not signed in, app uses `localStorage`:
 
 ## Deployment to GitHub Pages
 
-1. Move these files to the root of your GitHub Pages repo (or a `/docs` folder)
-2. Enable GitHub Pages in repository settings
-3. Access at `https://yourusername.github.io/repo-name/`
+1. Build the project: `npm run build`
+2. Deploy the `dist/` folder to GitHub Pages (or configure GitHub Actions to build automatically)
+3. Enable GitHub Pages in repository settings, pointing to the build output
+4. Access at `https://yourusername.github.io/repo-name/`
 
 ## Known Limitations
 
 - **Google Embeds**: May have CORS issues on some hosting setups
-- **Babel in Browser**: For production, consider a build step to pre-compile JSX
 - **OAuth Origins**: Must configure allowed origins in Google Cloud Console
 
 ## License & Attribution

@@ -1,5 +1,22 @@
-# Exclude config.js (contains API keys)
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (contains API keys)
+.env
+.env.local
+.env.*.local
 config.js
 
-# Exclude debug logs
-.cursor/debug.log
+# IDE
+.cursor/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
