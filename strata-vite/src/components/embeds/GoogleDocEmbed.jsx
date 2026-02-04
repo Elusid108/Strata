@@ -2,9 +2,9 @@ import { getEmbedUrlForType } from '../../lib/embed-utils';
 
 /**
  * Embed component for Google Docs, Sheets, and Slides
- * Supports edit/preview modes and zoom levels
+ * Supports edit/preview modes
  */
-export function GoogleDocEmbed({ page, viewMode = 'edit', zoomLevel = 100 }) {
+export function GoogleDocEmbed({ page, viewMode = 'edit' }) {
   if (!page?.driveFileId && !page?.embedUrl) {
     return (
       <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
@@ -13,10 +13,10 @@ export function GoogleDocEmbed({ page, viewMode = 'edit', zoomLevel = 100 }) {
     );
   }
   
-  // Generate URL based on view mode and zoom
+  // Generate URL based on view mode
   let src;
   if (page.driveFileId) {
-    src = getEmbedUrlForType(page.type, page.driveFileId, viewMode, zoomLevel);
+    src = getEmbedUrlForType(page.type, page.driveFileId, viewMode);
   } else {
     // Fallback to modifying existing embedUrl
     src = page.embedUrl;

@@ -1,45 +1,26 @@
-import { Star, Edit3, ZoomIn, ZoomOut, ExternalLink } from '../icons';
-import { shouldShowEditToggle, shouldShowZoomControls, getTypeDisplayName } from '../../lib/embed-utils';
+import { Star, Edit3, ExternalLink } from '../icons';
+import { shouldShowEditToggle, getTypeDisplayName } from '../../lib/embed-utils';
 import { DRIVE_SERVICE_ICONS } from '../../lib/constants';
 
 /**
- * Toolbar for embed pages with controls for view mode, zoom, and edit URL
+ * Toolbar for embed pages with controls for view mode and edit URL
  */
 export function EmbedToolbar({
   page,
   viewMode,
   onViewModeChange,
-  zoomLevel,
-  onZoomChange,
   onEditUrl,
   onToggleStar,
   isStarred
 }) {
   const showEditToggle = shouldShowEditToggle(page?.type);
-  const showZoom = shouldShowZoomControls(page, viewMode);
   
   // Get service icon URL
   const serviceIcon = DRIVE_SERVICE_ICONS.find(s => s.type === page?.type);
   const typeName = getTypeDisplayName(page?.type);
-  
-  const zoomLevels = [50, 75, 100, 125, 150, 175, 200];
-  
-  const handleZoomIn = () => {
-    const currentIndex = zoomLevels.indexOf(zoomLevel);
-    if (currentIndex < zoomLevels.length - 1) {
-      onZoomChange(zoomLevels[currentIndex + 1]);
-    }
-  };
-  
-  const handleZoomOut = () => {
-    const currentIndex = zoomLevels.indexOf(zoomLevel);
-    if (currentIndex > 0) {
-      onZoomChange(zoomLevels[currentIndex - 1]);
-    }
-  };
 
   return (
-    <div className="flex-shrink-0 relative px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800">
+    <div className="flex-shrink-0 px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-white dark:bg-gray-800">
       {/* Left: Icon, Title, Type, Star */}
       <div className="flex items-center gap-2">
         {serviceIcon?.url ? (
@@ -63,41 +44,9 @@ export function EmbedToolbar({
         </button>
       </div>
       
-      {/* Center: Zoom Controls (centered when visible) */}
-      {showZoom && (
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
-          <button
-            onClick={handleZoomOut}
-            disabled={zoomLevel <= 50}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-gray-400"
-            title="Zoom out"
-          >
-            <ZoomOut size={14} />
-          </button>
-          <span className="text-sm text-gray-600 dark:text-gray-400 min-w-[48px] text-center">
-            {zoomLevel}%
-          </span>
-          <button
-            onClick={handleZoomIn}
-            disabled={zoomLevel >= 200}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 dark:text-gray-400"
-            title="Zoom in"
-          >
-            <ZoomIn size={14} />
-          </button>
-          <button
-            onClick={() => onZoomChange(100)}
-            className={`px-2 py-0.5 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 ${zoomLevel === 100 ? 'opacity-60' : ''}`}
-            title="Reset to 100%"
-          >
-            Reset
-          </button>
-        </div>
-      )}
-      
-      {/* Right: Edit/Preview pill, Popout, Edit URL */}
+      {/* Right: Edit/Preview toggle, Popout, Edit URL */}
       <div className="flex items-center gap-2">
-        {/* Edit/Preview Toggle (pill - where zoom was) */}
+        {/* Edit/Preview Toggle */}
         {showEditToggle && (
           <div className="flex items-center gap-2">
             <span className={`text-sm font-medium ${viewMode === 'edit' ? 'text-blue-500 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Edit</span>

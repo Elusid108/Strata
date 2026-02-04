@@ -172,10 +172,9 @@ export const parseEmbedUrl = (rawUrl) => {
  * @param {string} type - Service type (doc, sheet, slide, etc.)
  * @param {string} fileId - File ID
  * @param {string} mode - 'edit' or 'preview'
- * @param {number} zoomLevel - Zoom percentage (for preview mode)
  * @returns {string} Embed URL
  */
-export const getEmbedUrlForType = (type, fileId, mode = 'edit', zoomLevel = 100) => {
+export const getEmbedUrlForType = (type, fileId, mode = 'edit') => {
   if (!fileId) return '';
   
   const baseUrls = {
@@ -196,14 +195,8 @@ export const getEmbedUrlForType = (type, fileId, mode = 'edit', zoomLevel = 100)
   switch (type) {
     case 'doc':
     case 'sheet':
-    case 'slide': {
-      const suffix = mode === 'preview' ? '/preview' : '/edit';
-      let url = `${base}${fileId}${suffix}`;
-      if (mode === 'preview' && zoomLevel && zoomLevel !== 100) {
-        url += `?rm=minimal#slide=id.p&zoom=${zoomLevel}`;
-      }
-      return url;
-    }
+    case 'slide':
+      return `${base}${fileId}${mode === 'preview' ? '/preview' : '/edit'}`;
     case 'form':
       return `${base}${fileId}/viewform`;
     case 'drawing':
@@ -252,13 +245,10 @@ export const shouldShowEditToggle = (pageType) => {
 
 /**
  * Check if page should show zoom controls
- * @param {Object} page - The page object
- * @param {string} viewMode - Current view mode ('edit' or 'preview')
- * @returns {boolean} True if zoom controls should be shown
+ * Google Docs/Sheets/Slides do not support zoom via URL - use Edit mode for native zoom
+ * @returns {boolean} Always false - zoom feature removed
  */
-export const shouldShowZoomControls = (page, viewMode) => {
-  return ['doc', 'sheet', 'slide'].includes(page?.type) && viewMode === 'preview';
-};
+export const shouldShowZoomControls = () => false;
 
 /**
  * Get display name for a page type

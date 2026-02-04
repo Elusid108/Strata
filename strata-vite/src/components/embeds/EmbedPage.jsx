@@ -26,9 +26,6 @@ export function EmbedPage({
     return 'edit';
   });
   
-  // Zoom level state
-  const [zoomLevel, setZoomLevel] = useState(() => page?.zoomLevel || 100);
-  
   // Update view mode when page changes
   useEffect(() => {
     if (page?.viewMode) {
@@ -38,7 +35,6 @@ export function EmbedPage({
     } else {
       setViewMode('edit');
     }
-    setZoomLevel(page?.zoomLevel || 100);
   }, [page?.id]);
   
   // Handle view mode change
@@ -48,12 +44,6 @@ export function EmbedPage({
     if (onUpdate) {
       onUpdate({ viewMode: mode });
     }
-  };
-  
-  // Handle zoom change
-  const handleZoomChange = (level) => {
-    setZoomLevel(level);
-    if (onUpdate) onUpdate({ zoomLevel: level });
   };
   
   // Render the appropriate embed component based on page type
@@ -68,7 +58,6 @@ export function EmbedPage({
           <GoogleDocEmbed
             page={page}
             viewMode={viewMode}
-            zoomLevel={zoomLevel}
           />
         );
       case 'form':
@@ -103,13 +92,11 @@ export function EmbedPage({
         page={page}
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
-        zoomLevel={zoomLevel}
-        onZoomChange={handleZoomChange}
         onEditUrl={onEditUrl}
         onToggleStar={onToggleStar}
         isStarred={isStarred}
       />
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {renderEmbed()}
       </div>
     </div>
