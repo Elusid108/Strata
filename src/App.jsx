@@ -232,13 +232,12 @@ function App() {
         try {
           const driveData = await loadFromDrive();
           if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
-            // Only update if we didn't have local data, or if Drive data is different
-            if (!localData || !localData.notebooks?.length) {
-              setData(driveData);
-              setActiveFromData(driveData);
-            }
-            // Note: If local data exists, we keep it and let the sync mechanism handle updates
-            // This prevents the "reset" behavior on refresh
+            // #region debug log
+            console.log('[DEBUG App] Drive data loaded, applying to state', { driveNotebooks: driveData.notebooks.length, localNotebooks: localData?.notebooks?.length });
+            // #endregion
+            // When authenticated, Drive is the source of truth - always use Drive data
+            setData(driveData);
+            setActiveFromData(driveData);
           }
         } catch (error) {
           console.error('Error loading from Drive:', error);
