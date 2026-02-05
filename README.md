@@ -155,6 +155,7 @@ own project, please provide attribution by:
 
 ## Version History
 
+- **v2.8.1** - Fixed Google Drive sync bugs: pages no longer vanish on hard refresh (explicit mimeType on file creation), duplicate JSON files no longer created (mimeType filter in search query + race condition re-check delay), infinite sync loop fixed (removed data dependency from sync effects, using dataRef pattern instead).
 - **v2.7.3** - Fixed Drive URL pages appearing blank after reset: syncGooglePageLink now sets strata_pageType and strata_icon on Drive files; loadFromDriveStructure derives page type from JSON content when file properties are missing (fixes existing link files).
 - **v2.7.2** - strata_index.json as primary: removed manifest.json, strata_index stores Drive IDs for stable load; boot reads strata_index first, falls back to strata_structure then folder scan; sync improvements (error notifications, 2s debounce); createDriveShortcut/getDriveItem 404 handling; favicon; reconciler.js loaded.
 - **v2.7.1** - License attribution: NOTICE file, README License & Attribution section; todo checkbox fix (controlled checkbox, immediate data sync in editor).

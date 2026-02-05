@@ -622,10 +622,10 @@ const saveFileIdempotent = async (fileId, name, parentId, content, properties = 
             }
         }
         
-        // Step 2: Search for file with same name in parent
+        // Step 2: Search for file with same name in parent (include mimeType to match load query)
         const searchQuery = parentId 
-            ? `name='${sanitizedName.replace(/'/g, "\\'")}' and '${parentId}' in parents and trashed=false`
-            : `name='${sanitizedName.replace(/'/g, "\\'")}' and 'root' in parents and trashed=false`;
+            ? `name='${sanitizedName.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/json' and trashed=false`
+            : `name='${sanitizedName.replace(/'/g, "\\'")}' and 'root' in parents and mimeType='application/json' and trashed=false`;
         
         const searchResponse = await gapi.client.drive.files.list({
             q: searchQuery,
@@ -660,7 +660,42 @@ const saveFileIdempotent = async (fileId, name, parentId, content, properties = 
             return existingFileId;
         }
         
-        // Step 3: Create new file as last resort
+        // Step 3: Re-check after brief delay to avoid race conditions with parallel syncs
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const recheckResponse = await gapi.client.drive.files.list({
+            q: searchQuery,
+            fields: 'files(id, name)',
+            pageSize: 1
+        });
+        
+        if (recheckResponse.result.files && recheckResponse.result.files.length > 0) {
+            // File was created by parallel sync, update it instead of creating duplicate
+            const existingFileId = recheckResponse.result.files[0].id;
+            const metadata = { name: sanitizedName };
+            if (Object.keys(properties).length > 0) {
+                const props = {};
+                if (properties.pageType !== undefined) props.strata_pageType = String(properties.pageType);
+                if (properties.icon !== undefined) props.strata_icon = String(properties.icon);
+                if (properties.tabColor !== undefined) props.strata_tabColor = String(properties.tabColor);
+                metadata.properties = props;
+            }
+            
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            if (content !== null && content !== undefined) {
+                form.append('file', new Blob([JSON.stringify(content)], { type: 'application/json' }));
+            }
+            
+            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                body: form
+            });
+            
+            return existingFileId;
+        }
+        
+        // Step 4: Create new file as last resort
         const metadata = {
             name: sanitizedName,
             mimeType: 'application/json'

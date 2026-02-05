@@ -29,6 +29,10 @@ export function useGoogleDrive(data, setData, showNotification) {
   const syncLockRef = useRef(false);
   const pendingSyncRef = useRef(false);
   const lastContentSyncRef = useRef(Date.now());
+  
+  // Data ref to avoid sync loop (effect depends on structureVersion, not data)
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
 
   // Initialize Google APIs and check auth status
   useEffect(() => {
@@ -114,7 +118,7 @@ export function useGoogleDrive(data, setData, showNotification) {
 
   // Sync folder structure to Drive
   useEffect(() => {
-    if (!isAuthenticated || isLoadingAuth || !driveRootFolderId || !data) return;
+    if (!isAuthenticated || isLoadingAuth || !driveRootFolderId) return;
 
     const syncStructure = async () => {
       if (syncLockRef.current) {
@@ -123,12 +127,19 @@ export function useGoogleDrive(data, setData, showNotification) {
       }
       syncLockRef.current = true;
       
+      // Use ref to get current data (avoids dependency on data which causes sync loop)
+      const currentData = dataRef.current;
+      if (!currentData || !currentData.notebooks) {
+        syncLockRef.current = false;
+        return;
+      }
+      
       try {
         setIsSyncing(true);
         const driveIdUpdates = {};
 
         // Sync each notebook
-        for (const notebook of data.notebooks) {
+        for (const notebook of currentData.notebooks) {
           if (!notebook.driveFolderId) {
             try {
               const folderId = await GoogleAPI.getOrCreateFolder(notebook.name, driveRootFolderId);
@@ -180,7 +191,7 @@ export function useGoogleDrive(data, setData, showNotification) {
           }
         }
 
-        // Apply drive ID updates
+        // Apply drive ID updates and update manifest only when there are actual changes
         if (Object.keys(driveIdUpdates).length > 0) {
           setData(prev => {
             const next = { ...prev, notebooks: prev.notebooks.map(notebook => {
@@ -214,14 +225,14 @@ export function useGoogleDrive(data, setData, showNotification) {
             })};
             return next;
           });
-        }
-        
-        // Update manifest.json and index.html
-        try {
-          await GoogleAPI.updateManifest(data, driveRootFolderId, APP_VERSION);
-          await GoogleAPI.uploadIndexHtml(generateOfflineViewerHtml(), driveRootFolderId);
-        } catch (error) {
-          console.error('Error updating manifest/index.html:', error);
+          
+          // Only update manifest when structure actually changed
+          try {
+            await GoogleAPI.updateManifest(dataRef.current, driveRootFolderId, APP_VERSION);
+            await GoogleAPI.uploadIndexHtml(generateOfflineViewerHtml(), driveRootFolderId);
+          } catch (error) {
+            console.error('Error updating manifest/index.html:', error);
+          }
         }
         
         setLastSyncTime(Date.now());
@@ -241,16 +252,20 @@ export function useGoogleDrive(data, setData, showNotification) {
     // Reduced delay for faster sync (localStorage provides immediate backup now)
     const syncTimeout = setTimeout(syncStructure, 1000);
     return () => clearTimeout(syncTimeout);
-  }, [structureVersion, isAuthenticated, isLoadingAuth, driveRootFolderId, data, setData]);
+  }, [structureVersion, isAuthenticated, isLoadingAuth, driveRootFolderId, setData]);
 
   // Content sync - update page content files
   useEffect(() => {
-    if (!isAuthenticated || isLoadingAuth || !driveRootFolderId || !data) return;
+    if (!isAuthenticated || isLoadingAuth || !driveRootFolderId) return;
     
     const syncContent = async () => {
       if (syncLockRef.current) return;
       
-      for (const notebook of data.notebooks) {
+      // Use ref to get current data (avoids dependency on data which causes sync loop)
+      const currentData = dataRef.current;
+      if (!currentData || !currentData.notebooks) return;
+      
+      for (const notebook of currentData.notebooks) {
         for (const tab of notebook.tabs) {
           const tabFolderId = tab.driveFolderId;
           if (!tabFolderId) continue;
@@ -276,7 +291,7 @@ export function useGoogleDrive(data, setData, showNotification) {
 
     const contentSyncTimeout = setTimeout(syncContent, 10000);
     return () => clearTimeout(contentSyncTimeout);
-  }, [data?.notebooks, isAuthenticated, isLoadingAuth, driveRootFolderId]);
+  }, [isAuthenticated, isLoadingAuth, driveRootFolderId]);
 
   // Trigger structure sync
   const triggerStructureSync = useCallback(() => {
