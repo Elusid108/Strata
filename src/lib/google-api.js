@@ -1207,6 +1207,9 @@ const loadStructure = async () => {
 
 // Get or create root folder "Strata Notebooks" in visible My Drive (not appDataFolder)
 const getOrCreateRootFolder = async () => {
+    // #region debug log
+    console.log('[DEBUG getOrCreateRootFolder] entry, cachedRootFolderId:', cachedRootFolderId);
+    // #endregion
     // Return cached ID if available
     if (cachedRootFolderId) {
         return cachedRootFolderId;
@@ -1226,15 +1229,24 @@ const getOrCreateRootFolder = async () => {
             await ensureAuthenticated();
 
             // Search for existing folder in My Drive root (not appDataFolder)
+            // #region debug log
+            console.log('[DEBUG getOrCreateRootFolder] searching for Strata Notebooks folder...');
+            // #endregion
             const response = await gapi.client.drive.files.list({
                 q: "name='Strata Notebooks' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",
                 fields: 'files(id, name)',
                 pageSize: 1
             });
+            // #region debug log
+            console.log('[DEBUG getOrCreateRootFolder] search result:', response.result?.files);
+            // #endregion
 
             if (response.result.files && response.result.files.length > 0) {
                 const folderId = response.result.files[0].id;
                 cachedRootFolderId = folderId;
+                // #region debug log
+                console.log('[DEBUG getOrCreateRootFolder] found existing folder:', folderId);
+                // #endregion
                 return folderId;
             }
 
@@ -1907,21 +1919,33 @@ const apiTreeToRows = (tree) => {
 
 // Load data structure from Drive folder hierarchy
 const loadFromDriveStructure = async (rootFolderId) => {
+    // #region debug log
+    console.log('[DEBUG loadFromDriveStructure] entry with rootFolderId:', rootFolderId);
+    // #endregion
     try {
         await ensureAuthenticated();
         
         // Load index file for sort order
         const indexData = await getIndexFile(rootFolderId);
+        // #region debug log
+        console.log('[DEBUG loadFromDriveStructure] indexData:', indexData);
+        // #endregion
         const notebookOrder = indexData?.notebooks || [];
         const tabOrder = indexData?.tabs || {};
         const pageOrder = indexData?.pages || {};
         
         // List notebook folders in root
+        // #region debug log
+        console.log('[DEBUG loadFromDriveStructure] listing notebook folders...');
+        // #endregion
         const notebooksResponse = await gapi.client.drive.files.list({
             q: `'${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
             fields: 'files(id, name, properties)',
             orderBy: 'name'
         });
+        // #region debug log
+        console.log('[DEBUG loadFromDriveStructure] notebooksResponse files:', notebooksResponse.result?.files?.length, notebooksResponse.result?.files?.map(f => f.name));
+        // #endregion
         
         const notebooks = [];
         const notebookMap = new Map(); // Map folder ID to notebook object
