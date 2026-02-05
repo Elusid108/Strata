@@ -91,33 +91,21 @@ let signInRejecter = null;
 // Initialize Google Identity Services
 const initGoogleAuth = () => {
     return new Promise((resolve, reject) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:initGoogleAuth-start',message:'initGoogleAuth called',data:{gisLoaded,hasTokenClient:!!tokenClient,hasGoogle:typeof google!=='undefined',hasGoogleAccounts:typeof google!=='undefined'&&!!google?.accounts},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F,G'})}).catch(()=>{});
-        // #endregion
         if (gisLoaded && tokenClient) {
             resolve();
             return;
         }
 
         if (typeof google === 'undefined' || !google.accounts) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:initGoogleAuth-noGoogle',message:'Google not loaded',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
             reject(new Error('Google Identity Services script not loaded'));
             return;
         }
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:initGoogleAuth-creating',message:'Creating tokenClient',data:{clientIdLength:CLIENT_ID?.length,scopesCount:SCOPES?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H'})}).catch(()=>{});
-        // #endregion
         try {
         tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: CLIENT_ID,
             scope: SCOPES.join(' '),
             error_callback: (error) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:error_callback',message:'OAuth error_callback fired',data:{errorType:error?.type,errorMessage:error?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'J'})}).catch(()=>{});
-                // #endregion
                 console.error('Google OAuth error_callback:', error);
                 if (signInRejecter) {
                     signInRejecter(new Error(error?.message || 'OAuth error'));
@@ -126,9 +114,6 @@ const initGoogleAuth = () => {
                 }
             },
             callback: async (response) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:callback-entry',message:'OAuth callback fired',data:{hasError:!!response.error,errorMsg:response.error||null,hasToken:!!response.access_token,hasResolver:!!signInResolver},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,E'})}).catch(()=>{});
-                // #endregion
                 if (response.error) {
                     console.error('OAuth error:', response.error);
                     if (signInRejecter) {
@@ -139,15 +124,10 @@ const initGoogleAuth = () => {
                     return;
                 }
                 accessToken = response.access_token;
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:before-setToken',message:'About to set gapi token',data:{tokenLength:accessToken?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
                 try {
                     gapi.client.setToken({ access_token: accessToken });
                 } catch (setTokenErr) {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:setToken-error',message:'setToken failed',data:{error:setTokenErr?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-                    // #endregion
+                    // Token set failed silently
                 }
                 
                 // Save token to sessionStorage for persistence (expires in ~1 hour)
@@ -157,42 +137,23 @@ const initGoogleAuth = () => {
                 
                 // Resolve the pending sign-in promise
                 if (signInResolver) {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:before-getUserInfo',message:'Calling getUserInfo',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
                     try {
                         const userInfo = await getUserInfo();
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:getUserInfo-success',message:'getUserInfo succeeded',data:{email:userInfo?.email},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-                        // #endregion
                         // Save user info to sessionStorage
                         sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(userInfo));
                         signInResolver(userInfo);
                     } catch (error) {
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:getUserInfo-error',message:'getUserInfo failed',data:{error:error?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C'})}).catch(()=>{});
-                        // #endregion
                         if (signInRejecter) signInRejecter(error);
                     }
                     signInResolver = null;
                     signInRejecter = null;
-                } else {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:no-resolver',message:'No signInResolver available',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-                    // #endregion
                 }
             },
         });
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:initGoogleAuth-created',message:'tokenClient created',data:{hasTokenClient:!!tokenClient},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H'})}).catch(()=>{});
-        // #endregion
         gisLoaded = true;
         resolve();
         } catch (initErr) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:initGoogleAuth-error',message:'initTokenClient failed',data:{error:initErr?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G'})}).catch(()=>{});
-            // #endregion
             reject(initErr);
         }
     });
@@ -202,9 +163,6 @@ const initGoogleAuth = () => {
 const signIn = () => {
     return new Promise(async (resolve, reject) => {
         try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:signIn-start',message:'signIn called',data:{hasTokenClient:!!tokenClient},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             if (!tokenClient) {
                 await initGoogleAuth();
             }
@@ -213,16 +171,9 @@ const signIn = () => {
             signInResolver = resolve;
             signInRejecter = reject;
             
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:signIn-request',message:'Requesting access token',data:{resolverSet:!!signInResolver},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
-            
             // Request the access token - this opens the popup
             tokenClient.requestAccessToken({ prompt: 'consent' });
         } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3d72f9b-db75-4eaa-8a60-90b1276ac978',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'google-api.js:signIn-error',message:'signIn error',data:{error:error?.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-            // #endregion
             reject(error);
         }
     });
@@ -1207,9 +1158,6 @@ const loadStructure = async () => {
 
 // Get or create root folder "Strata Notebooks" in visible My Drive (not appDataFolder)
 const getOrCreateRootFolder = async () => {
-    // #region debug log
-    console.log('[DEBUG getOrCreateRootFolder] entry, cachedRootFolderId:', cachedRootFolderId);
-    // #endregion
     // Return cached ID if available
     if (cachedRootFolderId) {
         return cachedRootFolderId;
@@ -1229,24 +1177,15 @@ const getOrCreateRootFolder = async () => {
             await ensureAuthenticated();
 
             // Search for existing folder in My Drive root (not appDataFolder)
-            // #region debug log
-            console.log('[DEBUG getOrCreateRootFolder] searching for Strata Notebooks folder...');
-            // #endregion
             const response = await gapi.client.drive.files.list({
                 q: "name='Strata Notebooks' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",
                 fields: 'files(id, name)',
                 pageSize: 1
             });
-            // #region debug log
-            console.log('[DEBUG getOrCreateRootFolder] search result:', response.result?.files);
-            // #endregion
 
             if (response.result.files && response.result.files.length > 0) {
                 const folderId = response.result.files[0].id;
                 cachedRootFolderId = folderId;
-                // #region debug log
-                console.log('[DEBUG getOrCreateRootFolder] found existing folder:', folderId);
-                // #endregion
                 return folderId;
             }
 
@@ -1919,33 +1858,21 @@ const apiTreeToRows = (tree) => {
 
 // Load data structure from Drive folder hierarchy
 const loadFromDriveStructure = async (rootFolderId) => {
-    // #region debug log
-    console.log('[DEBUG loadFromDriveStructure] entry with rootFolderId:', rootFolderId);
-    // #endregion
     try {
         await ensureAuthenticated();
         
         // Load index file for sort order
         const indexData = await getIndexFile(rootFolderId);
-        // #region debug log
-        console.log('[DEBUG loadFromDriveStructure] indexData:', indexData);
-        // #endregion
         const notebookOrder = indexData?.notebooks || [];
         const tabOrder = indexData?.tabs || {};
         const pageOrder = indexData?.pages || {};
         
         // List notebook folders in root
-        // #region debug log
-        console.log('[DEBUG loadFromDriveStructure] listing notebook folders...');
-        // #endregion
         const notebooksResponse = await gapi.client.drive.files.list({
             q: `'${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
             fields: 'files(id, name, properties)',
             orderBy: 'name'
         });
-        // #region debug log
-        console.log('[DEBUG loadFromDriveStructure] notebooksResponse files:', notebooksResponse.result?.files?.length, notebooksResponse.result?.files?.map(f => f.name));
-        // #endregion
         
         const notebooks = [];
         const notebookMap = new Map(); // Map folder ID to notebook object

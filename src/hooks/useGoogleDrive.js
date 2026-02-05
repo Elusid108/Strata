@@ -285,9 +285,6 @@ export function useGoogleDrive(data, setData, showNotification) {
 
   // Load data from Drive
   const loadFromDrive = useCallback(async () => {
-    // #region debug log
-    console.log('[DEBUG loadFromDrive] entry', { isAuthenticated, isLoadingAuth, userEmail });
-    // #endregion
     if (!isAuthenticated || isLoadingAuth) return null;
     
     try {
@@ -316,19 +313,10 @@ export function useGoogleDrive(data, setData, showNotification) {
 
       // Get root folder
       const rootFolderId = await GoogleAPI.getOrCreateRootFolder();
-      // #region debug log
-      console.log('[DEBUG loadFromDrive] rootFolderId:', rootFolderId);
-      // #endregion
       setDriveRootFolderId(rootFolderId);
       
       // Load from Drive
-      // #region debug log
-      console.log('[DEBUG loadFromDrive] calling loadFromDriveStructure...');
-      // #endregion
       const driveData = await GoogleAPI.loadFromDriveStructure(rootFolderId);
-      // #region debug log
-      console.log('[DEBUG loadFromDrive] driveData:', driveData ? { notebooks: driveData.notebooks?.length, firstNotebook: driveData.notebooks?.[0]?.name } : null);
-      // #endregion
       
       if (driveData && driveData.notebooks && driveData.notebooks.length > 0) {
         // Cache the data
